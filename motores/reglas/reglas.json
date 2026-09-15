@@ -1,0 +1,311 @@
+{
+  "version": 1,
+  "descripcion": "Reglas transversales destiladas del feedback humano. No pertenecen a ningun video: se aplican a todos los proyectos de video cartoon. Cada regla nace de un fallo concreto que ya ocurrio.",
+  "reglas": [
+    {
+      "id": "hora-del-dia-explicita",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "Todo prompt de escena debe fijar explicitamente la hora del dia y la fuente de luz. Si la escena es interior, se especifica la luz interior Y si por las aberturas entra dia o noche. Nunca se deja implicito.",
+      "por_que": "Sin decirlo, el modelo elige y dos planos consecutivos pasan de noche a dia. La imagen de referencia del plano anterior NO lo arregla: el texto del prompt pesa mas que la referencia.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S02",
+          "S04"
+        ],
+        "feedback": "Aqui pasa a ser de dia, cuando antes era de noche"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "continuidad-luz-entre-planos",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "La hora del dia se hereda del plano anterior salvo que el guion diga lo contrario. Si cambia, el cambio debe ser deliberado y estar escrito en el plan de escenas, no ser un efecto secundario.",
+      "por_que": "La continuidad temporal es lo primero que delata que los planos se generaron por separado.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S02"
+        ],
+        "feedback": "Aqui pasa a ser de dia, cuando antes era de noche"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "referencias-continuidad-multiples",
+      "ambito": "referencias",
+      "prioridad": 2,
+      "regla": "Pasar como referencia de continuidad los DOS ultimos planos generados, no solo el ultimo. Con uno solo la paleta deriva poco a poco a lo largo de la secuencia.",
+      "por_que": "Una sola referencia encadena errores: si el plano N se desvia, el N+1 hereda la desviacion y la amplifica.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S02",
+          "S04"
+        ],
+        "feedback": "usar la imagen anterior como referencia, o incluso varias de las escenas anteriores"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "hoja-reparto-grupo-distinta",
+      "ambito": "reparto",
+      "prioridad": 1,
+      "regla": "Cuando una entrada del reparto representa a un GRUPO, la hoja debe mostrar individuos claramente distintos entre si (altura, complexion, pelo, tono de piel, ropa), no varias vistas de la misma persona. Solo se usan multiples vistas cuando la entrada es un individuo unico.",
+      "por_que": "Si la hoja contiene un unico diseno de persona, en escena se repite ese diseno y el grupo sale clonado.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S06",
+          "S08",
+          "S10"
+        ],
+        "feedback": "Todos los personajes se parecen demasiado"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "set-coherente-con-narrativa",
+      "ambito": "blockout",
+      "prioridad": 1,
+      "regla": "El set 3D debe reflejar el estado narrativo del momento, no un estado generico. Si un elemento aun no ha llegado, no ha ocurrido o ya se ha ido, se genera una variante del set sin ese elemento en lugar de intentar quitarlo por prompt.",
+      "por_que": "Contradecir el guion en la imagen es un error que ningun prompt corrige de forma fiable: si la geometria trae el barco atracado, el barco sale.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S07"
+        ],
+        "feedback": "el barco aparece ya en el muelle, cuando en esta escena en teoria aun no ha llegado"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "no-repetir-encuadre-consecutivo",
+      "ambito": "plan_escenas",
+      "prioridad": 1,
+      "regla": "Dos planos consecutivos no pueden compartir camara ni encuadre parecido. Si el set no tiene angulos suficientes, se anade una camara antes de generar.",
+      "por_que": "Con encuadres casi iguales, los elementos y personajes parecen teletransportarse entre corte y corte en lugar de leerse como un corte de montaje.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S08",
+          "S09"
+        ],
+        "feedback": "Esta escena es casi igual que la anterior, mismo angulo y todo, queda como si se teletransportaran los assets"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "componentes-tambien-en-storyboard",
+      "ambito": "storyboard",
+      "prioridad": 2,
+      "regla": "Las escenas que son componentes vectoriales (mapas, graficos, revelados de cifra) tambien deben tener boceto en el gate de storyboard, renderizando el componente. Una tarjeta vacia no se puede revisar.",
+      "por_que": "El revisor no puede opinar sobre lo que no ve, y esas escenas suelen ser las que mas dependen de criterio editorial.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S03"
+        ],
+        "feedback": "Aqui falta boceto"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "expresion-facial-explicita",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "Todo prompt que contenga personajes debe declarar de forma explicita la expresion facial de cada uno, acorde al tono de la escena (boca, cejas y mirada). La sonrisa esta PROHIBIDA por defecto: solo se dibuja si el plan de escenas pide un tono alegre. Lo de las hojas de reparto lo dice la regla hoja-reparto-cara-visible, de ambito reparto: aqui no lo leia nadie. Y en todo prompt con caras se anade al negativo 'smiling, grin, cheerful expression'.",
+      "por_que": "El generador de imagen tiene un sesgo fuerte hacia las caras sonrientes: si no se le contradice explicitamente, marineros contrabandistas, aduaneros y militares salen todos sonriendo de noche y la imagen contradice el tono de la narracion. Decir solo 'serious' no basta; hay que describir la boca y prohibir la sonrisa en el negativo.",
+      "origen": {
+        "proyecto": "caso-meridiano",
+        "gate": 1,
+        "escenas": [
+          "S02",
+          "S06",
+          "S07"
+        ],
+        "feedback": "los personajes siempre salen sonriendo"
+      },
+      "fecha": "2026-08-12"
+    },
+    {
+      "id": "hoja-reparto-cara-visible",
+      "ambito": "reparto",
+      "prioridad": 1,
+      "regla": "La hoja de reparto tiene que ENSENAR LA CARA de cada personaje: ojos, cejas y boca visibles, con expresion neutra y seria, y sin nada que la tape POR ACCIDENTE (reflejos, brillos de pantalla, sombras, pelo delante, gafas de sol). En el negativo va siempre smiling, grin, cheerful expression. EXCEPCION, y es la unica: si la descripcion o el feedback piden EXPRESAMENTE una cara tapada -- mascara, casco integral, pasamontanas, antifaz, venda --, esa prenda pasa a SER la cara de ese personaje: se dibuja identica en las dos filas, con la misma forma, las mismas marcas y los mismos colores, distinta de la de los demas, y nunca vaga, borrosa ni en sombra. Lo que la regla exige no es una cara: es algo copiable donde va la cara. La hoja viaja como referencia a todos los planos donde sale ese personaje, asi que lo que haya ahi se hereda; una hoja sin nada fijo no fija nada y cada plano se inventa una cosa distinta.",
+      "por_que": "Paso: la descripcion del grupo traia puesta en escena en vez de rasgos (faces mostly hidden in monitor glare) y, sobre el fondo liso de la hoja -- donde no hay ningun monitor que emita ese brillo --, el modelo dibujo el reflejo COMO UNA PLACA BLANCA sobre los ojos. Los nueve planos que usaban esa hoja tenian orden de copiar esos personajes y no habia ninguna cara que copiar. La excepcion se anadio el 23-08 por el caso contrario (PENDIENTE 32): se pidieron ocho hackers con mascara de Anonymous y salieron a cara descubierta dos veces seguidas, porque esta regla se escribe DETRAS del feedback y decia 'mascaras'. Un reflejo es un accidente y una mascara es vestuario: lo primero rompe la hoja y lo segundo no, mientras se dibuje identico y copiable.",
+      "origen": {
+        "proyecto": "video_largo",
+        "assets": [
+          "asset:nubla"
+        ],
+        "escenas": [
+          "S002",
+          "S012",
+          "S013",
+          "S014",
+          "S015",
+          "S018",
+          "S019",
+          "S020",
+          "S021"
+        ],
+        "feedback": "los hackers salen distintos en cada plano y no se parecen a la hoja"
+      },
+      "fecha": "2026-08-23"
+    },
+    {
+      "id": "manos-segun-la-guia",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "fecha": "2026-08-18",
+      "regla": "Las manos, los brazos y los pies se dibujan con la CONVENCION DEL ESTILO, y esa convencion la fija la guia de estilo, no este fichero. Si la guia dice cuantos dedos hay, ese numero manda y no se anaden ni se quitan. En el negativo va siempre: extra fingers, fused fingers, deformed hands -- eso esta mal dibujado en cualquier estilo, tambien en uno realista. Cuando una mano no aporta nada al plano -- un personaje de espaldas, un plano general -- es mejor que quede fuera de encuadre o detras de un objeto que dibujarla mal.",
+      "por_que": "El generador tira SIEMPRE a la mano realista de cinco dedos mientras nadie le diga lo contrario, asi que en un estilo de manopla o de tres dedos el hueco no sale neutro: sale mal. Se vio en planos donde todo lo demas respetaba el estilo y las manos no. Pero este fichero se lee igual en TODOS los videos, sin mirar los fotogramas ni la guia, asi que aqui solo puede entrar lo que esta mal en cualquier estilo: un dedo de mas o dos dedos fundidos lo estan en un dibujo plano y en una foto. Hasta el 18-08-2026 el negativo llevaba tambien 'realistic hands', 'five-fingered hands when the style says otherwise' y 'photographic anatomy', que son una decision de estilo puesta en la capa transversal: empujaban contra el estilo elegido, plano a plano, en cualquier video que quisiera ser realista. Eso lo dice ahora la guia en su campo 'evitar', que se escribe mirando los fotogramas de ESE video.",
+      "origen": {
+        "proyecto": "video_largo",
+        "feedback": "algunos planos no respetan el formato de las manos"
+      }
+    },
+    {
+      "id": "texto-en-imagen-permitido-pero-raro",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "Text inside the drawing is ALLOWED. WHETHER it appears is decided by what is being drawn: lettering belongs where it is part of what the thing IS -- where that object, in the world this production depicts, would carry it. Do not add text as decoration or filler, and do not strip it from something that would plainly bear it. How often that happens is not fixed here: it follows the scene and the style guide above, and it ranges from almost every image to none at all. WHAT IS FIXED is the amount and the size, because that is where drawn lettering goes wrong. AMOUNT: at most ten words in one piece of text -- three or four is the usual, and fewer is always better. No sentences, no paragraphs, no body copy, no dense lists, no fine print, no invented small captions. SIZE: whatever you write has to be readable at a glance, occupying a real part of the frame. Never draw small, thin or crowded lettering. If a piece of text cannot be short AND large, leave it out and suggest it with shape alone. HOW IT SITS: the lettering belongs to the object and to this production, never pasted flat on top of it. It sits on the surface and obeys it -- its perspective, its curvature, its material, its age and its wear -- and it is made with THE SAME technique, tool and finish as everything else in the frame, exactly as the style guide above describes them. Never introduce lettering, or a lettering convention, that the style guide would not produce, and never fall back on generic clean type unless the guide calls for it. Spell every word correctly. When an image's job is to EXPLAIN a structure rather than depict a place, its labels are part of the explanation: one short word per element, set large, beside a simple icon that carries the meaning.",
+      "por_que": "El prompt terminaba con «No text, no letters, no numbers anywhere» en los planos, en las laminas de estilo y en el eje del diagrama. Lo prohibia todo, y el resultado eran escaparates sin rotulo, portadas en blanco y diagramas de cajas vacias: un mundo sin una letra, que no se parece a nada. Lo que se queria evitar era el texto INVENTADO y mal escrito, no el texto que la escena tiene de por si. Escrita en ingles porque se concatena tal cual a un prompt en ingles. Decidido por el canal el 24-08-2026.",
+      "origen": {
+        "feedback": "siempre que muestras un diagrama no tiene nada de texto y eso esta mal, pueden haber textos, pero pocas palabras y claras, y poco frecuente"
+      },
+      "fecha": "2026-08-24",
+      "origenes_extra": [
+        {
+          "feedback": "pueden haber textos, pero pocas palabras y claras, y poco frecuente; lo que SI hay que prohibir son textos largos y complejos, y tambien puede fallar si es texto pequeno"
+        },
+        {
+          "feedback": "pueden haber textos, pero pocas palabras y claras, y poco frecuente; que el motor entienda cuando encaja meter texto, con ejemplos MUY variados y pensando en estilos visuales distintos (manga, realista, clay motion...), maximo en torno a 10 palabras y no muy pequenas para que no falle"
+        },
+        {
+          "feedback": "las instrucciones de texto deben ser abstractas, como el resto del motor, que ya se ha planteado asi para que se pueda adaptar a cualquier estilo grafico que mande el preset"
+        },
+        {
+          "feedback": "el texto es raro en este estilo concreto que estamos trabajando, en otro puede ser mas frecuente; donde si hay que limitarlo es a nivel de cantidad de palabras, nunca muchas y nunca muy pequenas, ahi falla"
+        },
+        {
+          "feedback": "eso debe ser mas abstracto para encajar bien en cualquier estilo"
+        }
+      ]
+    },
+    {
+      "id": "un-personaje-aparece-una-vez",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "CADA PERSONAJE NOMBRADO APARECE UNA SOLA VEZ EN EL CUADRO, y aparece COMO PERSONA PRESENTE. No se dibuja ademas su retrato, su foto, su silueta, su avatar ni su cara en una pantalla dentro del mismo plano. Si lo que el plano necesita es la REPRESENTACION de alguien (una foto en un tablon, una ficha, un retrato robot), ese alguien NO puede estar ademas de cuerpo presente en la escena: o esta, o lo representan, nunca las dos cosas.",
+      "por_que": "Un plano de investigadores clavando la foto del atacante en un tablon salio con el atacante tambien de pie en la misma sala. El prompt nombraba a los dos --los que investigan y el investigado-- y el generador dibujo a todos los que le nombraron. No da error: da una escena que se contradice a si misma y que el espectador lee como un fallo de guion.",
+      "origen": {
+        "proyecto": "video_largo_light",
+        "gate": "video montado",
+        "fecha_revision": "2026-08-24",
+        "minuto": "1:33",
+        "feedback": "se ve gente investigando al atacante con su foto, pero ese atacante tambien esta en la sala"
+      },
+      "fecha": "2026-08-24"
+    },
+    {
+      "id": "el-reparto-es-quien-esta-presente",
+      "ambito": "plan_escenas",
+      "prioridad": 1,
+      "regla": "EL REPARTO DE UN PLANO ES QUIEN ESTA FISICAMENTE AHI EN ESE MOMENTO DEL RELATO, no quien se esta mencionando. Un personaje del que se HABLA no entra en el reparto de ese plano; entra cuando la narracion lo situa en ese sitio. Dos personajes de bandos opuestos solo comparten plano si el relato dice que se encontraron.",
+      "por_que": "El reparto se rellenaba con quien nombraba la frase, asi que el atacante salia dentro de la oficina que lo estaba buscando. La narracion decia «los investigadores buscaban a X» y el plano dibujaba a los investigadores Y a X, en el mismo cuarto. Lo que decide quien sale no es de quien se habla: es donde ocurre.",
+      "origen": {
+        "proyecto": "video_largo_light",
+        "gate": "video montado",
+        "fecha_revision": "2026-08-24",
+        "minuto": "3:24",
+        "feedback": "aparece el grupo atacante dentro de la oficina que supuestamente los esta investigando"
+      },
+      "fecha": "2026-08-24"
+    },
+    {
+      "id": "una-cara-por-persona-en-todo-el-video",
+      "ambito": "referencias",
+      "prioridad": 1,
+      "regla": "UN MISMO ACTOR DEL RELATO ES UNA SOLA ENTRADA DE REPARTO EN TODO EL VIDEO. Si un grupo o una persona sale en el minuto uno y vuelve en el minuto tres, es la MISMA entrada y la misma hoja de personaje, aunque la narracion lo llame de otra forma (un apodo, el nombre del grupo, «los atacantes»). No se crean dos entradas para la misma cosa: se crean dos disenos y el espectador ve dos personajes distintos donde el relato tiene uno.",
+      "por_que": "Al principio de un video los atacantes tenian un diseno y a mitad salieron con otro, porque el catalogo habia creado dos entradas --una por como se los nombraba al principio y otra por su nombre propio, que aparece despues--. La continuidad visual de un personaje no la sostiene la hoja: la sostiene que haya UNA hoja.",
+      "origen": {
+        "proyecto": "video_largo_light",
+        "gate": "video montado",
+        "fecha_revision": "2026-08-24",
+        "minuto": "2:35",
+        "feedback": "los hackers tienen un diseno que esta bien, pero antes teniamos otro hacker distinto que ya no aparece cuando deberia"
+      },
+      "fecha": "2026-08-24"
+    },
+    {
+      "id": "una-persona-no-es-su-propia-victima",
+      "ambito": "referencias",
+      "prioridad": 1,
+      "regla": "UNA HOJA DE PERSONAJE SOLO SE ADJUNTA A LOS PLANOS DONDE ESE PERSONAJE SALE, y el prompt tiene que decir QUE PAPEL hace en ese plano. Si el plano necesita a alguien generico --una victima, un cliente, un empleado cualquiera-- se describe como generico y NO se le adjunta la hoja de nadie: adjuntar una hoja es decir «dibuja a esta persona», y el generador lo obedece aunque la frase de al lado diga otra cosa.",
+      "por_que": "Un plano que ilustraba a una persona corriente afectada salio con la cara del atacante, porque su hoja viajaba adjunta. La imagen manda mucho mas que el texto: decir con palabras «esta persona es otra» no basta contra una hoja que dice «copia estos rasgos exactamente».",
+      "origen": {
+        "proyecto": "video_largo_light",
+        "gate": "video montado",
+        "fecha_revision": "2026-08-24",
+        "minuto": "4:24",
+        "feedback": "la imagen muestra al hacker de antes como si estuviese el mismo afectado"
+      },
+      "fecha": "2026-08-24"
+    },
+    {
+      "id": "nada-de-letras-inventadas",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "NO SE DIBUJA NINGUNA LETRA QUE NO SE HAYA PEDIDO. Todo texto que aparezca en el cuadro --un rotulo, una pantalla, una portada, una etiqueta, una pancarta-- tiene que estar pedido explicitamente y entrecomillado en el prompt, y tiene que ser una palabra del relato. Una superficie que podria llevar texto y de la que nadie ha dicho que ponga, se dibuja SIN texto o con formas ilegibles (lineas, bloques, columnas borrosas), nunca con una palabra elegida por el generador. En el negativo va siempre: 'invented words, random lettering, placeholder text, lorem ipsum, gibberish labels'.",
+      "por_que": "Un plano de alguien delante de un ordenador salio con la palabra FILM ocupando la pantalla entera. Nadie la pidio y no significaba nada: el generador rellena las superficies vacias con letras plausibles. Una palabra inventada a tamano de titular no se lee como decorado, se lee como un dato -- y el espectador se para a intentar entenderla.",
+      "origen": {
+        "proyecto": "video_largo_light",
+        "gate": "video montado",
+        "fecha_revision": "2026-08-24",
+        "minuto": "0:38",
+        "feedback": "sale «FILM» en una pantalla y no tiene ningun sentido en ese contexto"
+      },
+      "fecha": "2026-08-24"
+    },
+    {
+      "id": "el-sentido-lo-fija-el-relato",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "UNA PALABRA CON DOS SENTIDOS SE ESCENIFICA EN EL SENTIDO QUE LE DA EL RELATO, y ese sentido se escribe en el prompt, no se deja implicito. Cuando un termino tiene un significado cotidiano y otro propio del mundo del video (un proveedor de servicios frente a un proveedor de mercancias, una llave digital frente a una de metal, un puente de red frente a uno de piedra), el prompt dice CUAL es y describe objetos de ESE mundo. El generador siempre elige el sentido mas comun, que es justo el que no toca cuando el video habla de otra cosa.",
+      "por_que": "Una frase sobre los proveedores de servicios de una empresa salio ilustrada con furgonetas en un almacen. La palabra es la misma y la imagen es la del sentido cotidiano; el plano contradecia lo que se estaba oyendo sin que nada fallara.",
+      "origen": {
+        "proyecto": "video_largo_light",
+        "gate": "video montado",
+        "fecha_revision": "2026-08-24",
+        "minuto": "4:01",
+        "feedback": "habla de proveedores de servicios y muestra furgonetas en un almacen; aqui un proveedor no es alguien que trae cajas"
+      },
+      "fecha": "2026-08-24"
+    },
+    {
+      "id": "texto-dibujado-en-el-idioma-del-video",
+      "ambito": "prompt_imagen",
+      "prioridad": 1,
+      "regla": "THE LETTERING YOU DRAW BELONGS TO THE FILM, NOT TO THESE INSTRUCTIONS. These instructions are written in English, and English is NOT the language of the film. The film's language is the one this prompt states. Everything the production itself writes -- the labels of an explanatory diagram, a word set on a graphic backdrop, a heading over a chart, a sign or a note made for this scene -- is written in that language and spelled correctly in it, accents and diacritics included. This does NOT reach what a name IS: brands, logos, product names, acronyms, institutions, place names, titles of real works, code and interface strings keep the exact form they have in the real world and are never translated; when the narration names one, copy the narration's spelling. And this adds nothing: it only decides the LANGUAGE of the lettering the rules above already allow, and a shot that needed no lettering still needs none. If this prompt states no language, this clause decides nothing.",
+      "por_que": "Un canal en espanol saco una lamina de estilo con un diagrama rotulado «PLAN / DO / REVIEW». Nadie lo pidio en ingles: el encargo entero va en ingles --la guia de estilo, las reglas, la descripcion del plano-- y el generador rotula en el idioma en el que se le habla. Y la lamina del eje «diagrama» no se queda ahi: viaja como imagen de referencia dentro de cada plano que lleve un componente, o sea que ensena a rotular en ingles CON UN EJEMPLO DIBUJADO, que es lo que ningun texto contradice del todo. Va aqui y no en la guia de estilo a proposito: el idioma es de cada video y la guia es del canal --se puede cambiar el idioma de un preset sin volver a escribirla--, asi que una guia con el idioma dentro se queda mintiendo el dia que cambie. Escrita en ingles porque se concatena tal cual a un prompt en ingles. Quien dice CUAL es el idioma es el codigo, que es el unico que lo sabe.",
+      "origen": {
+        "proyecto": "preset Monkey (canal en espanol)",
+        "gate": "muestra del preset",
+        "fecha_revision": "2026-08-24",
+        "feedback": "este se establecio en castellano, pero la cartela de ejemplo aparece en ingles, eso puede contaminar el resultado final"
+      },
+      "fecha": "2026-08-24"
+    }
+  ]
+}

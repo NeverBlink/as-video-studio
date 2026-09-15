@@ -1,0 +1,34 @@
+[Unit]
+Description=AS Video Studio — el estudio
+After=network.target
+
+[Service]
+Type=simple
+User=studio
+Group=studio
+WorkingDirectory=/opt/as-video-studio/app
+EnvironmentFile=/opt/as-video-studio/datos/entorno
+ExecStart=/opt/as-video-studio/venv/bin/python /opt/as-video-studio/app/app.py --puerto ${PUERTO} --host 127.0.0.1
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+# Un render largo tarda; no se le corta a los 90 s de rigor.
+TimeoutStopSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=as-video-studio
+
+# Endurecido, pero dejando pasar lo que el render necesita: el navegador escribe
+# su perfil en /tmp (aislado con PrivateTmp) y usa /dev/shm para las texturas.
+# ProtectSystem=full y no strict: con strict habria que enumerar cada ruta que
+# toca el navegador, y basta con que /usr y /etc sean de solo lectura.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ReadWritePaths=/opt/as-video-studio/datos /opt/as-video-studio/app/cache
+
+[Install]
+WantedBy=multi-user.target

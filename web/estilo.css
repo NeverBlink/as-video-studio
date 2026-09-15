@@ -1,0 +1,2435 @@
+/* Estudio de Video — hoja de estilo unica. No hay build: se edita y se recarga.
+
+   TODO el color vive en :root, y no hay ni un valor escrito a mano fuera de ese
+   bloque. La version anterior tenia 45 sueltos y repintar obligaba a
+   perseguirlos uno a uno; ahora cambiar la paleta es cambiar :root. */
+
+:root {
+  /* LA PALETA, entera.
+
+     Aqui esta TODO el color de la interfaz. No hay ni un solo valor escrito a
+     mano fuera de este bloque, a proposito: la version anterior tenia 45
+     sueltos y repintarla obligaba a ir persiguiendolos uno a uno. */
+
+  /* superficies, de mas al fondo a mas cerca */
+  --bg: #0a0b0e;
+  --panel: #14161c;
+  --hueco: #191c24;          /* campos, tarjetas y cajas dentro de un panel */
+  --boton: #1e222a;
+  --hover: #1d212a;          /* fila del raton encima */
+  --marcado: #202a44;        /* fila elegida: el fondo lleva el acento dentro */
+  --resalte: #26304d;        /* la palabra que suena en la revision de audio */
+  --lienzo: #0c0e12;         /* detras de una imagen que aun no ha cargado */
+  --negro: #000;             /* video y visor: negro de verdad, no casi negro */
+  --papel: #f4f2ec;          /* papel: se queda claro en los dos temas */
+  --blanco: #fff;
+
+  /* lineas */
+  --linea: #252932;
+  --linea-suave: #1e222a;    /* separador dentro de una lista */
+
+  /* texto */
+  --texto: #e9ecf2;
+  --tenue: #98a1b0;
+  --tenue2: #5f6878;
+  --sobre-acento: #0a0b0e;   /* texto encima de un fondo de acento o de 'ok' */
+
+  /* significado */
+  --acento: #6c8cff;
+  --acento2: #b16cff;
+  --ok: #3ddc97;
+  --aviso: #f5c451;
+  --malo: #ff5d5d;
+
+  /* cajas de estado: fondo, texto y borde de cada una */
+  --info-fondo: #161c2e;
+  --acento-borde: #2c3a63;
+  --aviso-fondo: #241d10;
+  --aviso-texto: #f3d9a4;
+  --aviso-borde: #4a3b1a;
+  --error-fondo: #23151a;
+  --error-texto: #ffc9c9;
+  --malo-fondo: #241318;
+  --malo-texto: #ffb3b3;
+  --malo-borde: #4a2630;
+  --ok-borde: #1f4a38;
+
+  /* volcado tecnico de un error */
+  --volcado-fondo: #10141a;
+  --volcado-borde: #3a2630;
+  --volcado-texto: #e2b8be;
+
+  /* barras y puntos de estado */
+  --surco: #20242c;
+  --surco-alto: #2a303c;
+  --punto-pendiente: #3a4150;
+  --punto-bloqueado: #262b34;
+
+  /* velos de las capas que tapan la pantalla */
+  --velo: rgba(6, 7, 10, .92);
+  --velo-suave: rgba(10, 11, 14, .82);
+  --sombra: 0 14px 40px rgba(0, 0, 0, .6);
+
+  --alto: 46px;            /* alto de la cabecera */
+  --lateral: 360px;
+  --toque: 40px;           /* lado minimo de un mando que se pulsa con el dedo */
+  --margen-panel: 20px;    /* respiro lateral del panel; se estrecha en movil */
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+/* 100dvh: en el movil la barra del navegador aparece y desaparece, y con 100vh
+   la fila de pestanas se quedaba debajo del borde justo al hacer scroll. */
+@supports (height: 100dvh) { html, body { height: 100dvh; } }
+body {
+  margin: 0; background: var(--bg); color: var(--texto);
+  font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  overflow: hidden;                       /* el scroll vive dentro de #panel */
+  /* Columna: cabecera, pestanas y cuerpo. Antes el cuerpo era
+     calc(100% - alto - 38px), con el alto de las pestanas escrito a mano: en
+     cuanto la cabecera o las pestanas cambiaban de alto (o se partian en dos
+     lineas en movil) el panel se salia de la pantalla por abajo. */
+  display: flex; flex-direction: column;
+}
+h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+a { color: var(--acento); }
+
+/* ---------------------------------------------------------------- cabecera */
+
+/* Todo en UNA linea. La barra llego a tener siete mandos sueltos y se pisaban;
+   ahora los de proyecto (abrir, crear, apartar, papelera, rendimiento) viven en
+   el menu del boton del proyecto, y lo que queda va en letra pequena. */
+#cabecera {
+  height: var(--alto); flex: 0 0 auto;
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 12px; border-bottom: 1px solid var(--linea);
+  background: var(--panel); font-size: 12px;
+}
+#cabecera h1 {
+  font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--acento); flex: 0 0 auto;
+}
+#cabecera button { font-size: 12px; padding: 3px 8px; }
+/* el nombre del proyecto cede sitio antes que el medidor de coste, que es de
+   ancho fijo y tiene que caber entero para poder leerse de un vistazo */
+#meta-proyecto { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crece { flex: 1; }
+.meta { color: var(--tenue); font-size: 12px; }
+.meta b { color: var(--texto); font-weight: 600; }
+
+/* min-width:0 es lo que le permite encoger: sin el, un boton flex nunca baja
+   del ancho de su texto y empuja fuera de la barra al medidor de coste y a los
+   dos botones de la derecha, que es lo que pasaba en cuanto el nombre del
+   proyecto era largo y la pantalla estrecha. */
+#btn-proyecto {
+  display: flex; align-items: center; gap: 7px; max-width: 300px; min-width: 0;
+  background: var(--hueco); font-weight: 600;
+}
+#btn-proyecto .nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#btn-proyecto .flecha { color: var(--tenue); flex: 0 0 auto; }
+
+#menu-proyectos {
+  position: fixed; z-index: 58; top: calc(var(--alto) + 4px); left: 12px;
+  width: min(460px, calc(100vw - 24px)); max-height: 70vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--acento); border-radius: 10px;
+  box-shadow: var(--sombra); padding: 6px;
+}
+#menu-proyectos.plegado { display: none; }
+
+/* Elegir preset y elegir proyecto son la misma clase de decisión —cuál de los
+   guardados quieres— así que se ven y se manejan igual. Compartir las reglas no
+   es ahorro de líneas: eran dos desplegables distintos, y el de presets además
+   dejaba las acciones fuera, con la papelera en otro sitio que la de proyectos.
+   Lo que se hace sobre un elemento va en su fila; lo que no es elegir, al pie. */
+.fila-proyecto, .fila-preset { display: flex; align-items: center; gap: 4px; border-radius: 7px; }
+.fila-proyecto:hover, .fila-preset:hover { background: var(--hueco); }
+.fila-proyecto.abierto, .fila-preset.abierto {
+  background: var(--hueco); box-shadow: inset 2px 0 0 var(--acento);
+}
+.fila-proyecto .abrir, .fila-preset .abrir {
+  flex: 1; text-align: left; background: none; border-color: transparent;
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.fila-proyecto .abrir .nombre, .fila-preset .abrir .nombre {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fila-proyecto .abrir .meta, .fila-preset .abrir .meta { font-size: 11px; }
+.fila-proyecto .apartar, .fila-preset .apartar { flex: 0 0 auto; opacity: .5; }
+.fila-proyecto:hover .apartar, .fila-preset:hover .apartar { opacity: 1; }
+.fila-proyecto .apartar:hover, .fila-preset .apartar:hover { border-color: var(--malo); }
+.pie-menu {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px; padding-top: 8px;
+  border-top: 1px solid var(--linea);
+}
+
+/* El de presets vive dentro de un panel, no en la cabecera: se ancla a su
+   propia caja en vez de a la ventana, porque hay uno por pestaña. */
+.selector-preset { position: relative; flex: 1; min-width: 0; }
+.btn-preset .nombre { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-preset .flecha { color: var(--tenue); flex: 0 0 auto; }
+.menu-preset.plegado { display: none; }
+/* La miniatura del preset en su fila: la misma cara que ya tiene la tarjeta. */
+.fila-preset .cara {
+  flex: 0 0 auto; width: 38px; height: 24px; border-radius: 4px; object-fit: cover;
+  margin-left: 4px;
+}
+
+/* ---------------------------------------------------------------- coste */
+
+/* Y `.coste-light` con el, no debajo: es la MISMA cifra del mismo video
+   mirada desde la otra pantalla (ver `costeLight` en app.js). Dos bloques de
+   estilo separados es la forma de que uno se quede viejo. Lo unico que cambia
+   es que este no se abre, asi que no lleva cursor de mano. */
+#coste, .coste-light {
+  display: flex; align-items: center; gap: 12px; padding: 3px 10px;
+  background: var(--hueco); border: 1px solid var(--linea); border-radius: 8px;
+  font-size: 12px; line-height: 1.2; white-space: nowrap; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.coste-light { cursor: default; flex: 0 0 auto; }
+#coste.abierto { border-color: var(--acento); }
+#coste.aviso, .coste-light.aviso { border-color: var(--aviso); }
+#coste .prov, .coste-light .prov { display: flex; align-items: baseline; gap: 5px; }
+#coste .prov b, .coste-light .prov b { color: var(--tenue); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+#coste .prov.total b, .coste-light .prov.total b { color: var(--texto); }
+#coste .usd, .coste-light .usd { color: var(--texto); }
+#coste .usd.medido, .coste-light .usd.medido { font-weight: 600; }
+/* un importe sacado de la tabla de tarifas no es lo mismo que uno medido */
+.usd.derivado { border-bottom: 1px dotted var(--acento); color: var(--acento); }
+.usd.medido { color: var(--ok); }
+#coste .sin-tarifa, .sin-tarifa { color: var(--aviso); font-style: italic; }
+#coste .presupuesto, .coste-light .presupuesto {
+  width: 46px; height: 5px; background: var(--surco); border-radius: 3px; overflow: hidden;
+}
+#coste .presupuesto i, .coste-light .presupuesto i { display: block; height: 100%; background: var(--ok); }
+#coste .presupuesto.aviso i, .coste-light .presupuesto.aviso i { background: var(--aviso); }
+
+#coste-detalle {
+  position: fixed; right: 12px; top: calc(var(--alto) + 6px); z-index: 55;
+  width: min(760px, calc(100vw - 24px)); max-height: 70vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--acento); border-radius: 11px;
+  box-shadow: var(--sombra); padding: 14px 16px;
+}
+#coste-detalle.plegado { display: none; }
+#coste-detalle h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--acento); }
+.coste-pasos { margin-top: 10px; }
+.coste-pasos th { color: var(--texto); }
+.coste-pasos tr:first-child th { color: var(--tenue); font-weight: 400; }
+
+/* ---------------------------------------------------------------- controles */
+
+button, select, input, textarea {
+  font: inherit; color: var(--texto); background: var(--hueco);
+  border: 1px solid var(--linea); border-radius: 7px; padding: 6px 10px;
+}
+button { background: var(--boton); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--acento); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.primario {
+  background: var(--acento); color: var(--sobre-acento); border-color: var(--acento);
+  font-weight: 600;
+}
+button.peligro { border-color: var(--malo-borde); color: var(--malo-texto); }
+button.peligro:hover:not(:disabled) { border-color: var(--aviso); }
+button.mini { padding: 3px 8px; font-size: 12px; border-radius: 6px; }
+button.fantasma { background: transparent; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--acento); }
+textarea { width: 100%; resize: vertical; line-height: 1.55; }
+input[type=range] { padding: 0; background: none; border: none; accent-color: var(--acento); }
+input[type=checkbox] { accent-color: var(--acento); width: 15px; height: 15px; }
+label {
+  display: block; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--tenue); margin-bottom: 4px;
+}
+.campo { margin-bottom: 14px; }
+.campo.plano { display: flex; align-items: center; gap: 8px; }
+/* La etiqueta hace de mando de su casilla (se conecta en app.js): con el dedo,
+   acertar 22px de casilla es una loteria y el texto de al lado es el objetivo
+   natural. El cursor lo dice. */
+.campo.plano label { margin: 0; cursor: pointer; user-select: none; }
+/* ------------------------------------------------------------ caja de campo
+   El hueco de un campo de texto. `display: block` mas el 100 % de dentro es lo
+   que hace que un input o un textarea llenen su hueco sea el que sea: metidos
+   en una fila flexible, sin esto se quedan al ancho que el navegador les
+   calcule y las filas salen desiguales. */
+
+.caja-campo { position: relative; display: block; }
+.caja-campo > input, .caja-campo > textarea { width: 100%; }
+.caja-campo.area > textarea { min-height: 64px; }
+
+.pista { font-size: 12px; color: var(--tenue); margin-top: 5px; }
+.pista b { color: var(--texto); font-weight: 600; }
+.fila { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.fila.arriba { align-items: flex-start; }
+.rejilla { display: grid; gap: 14px; }
+.numerico { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- pestanas */
+
+#pestanas {
+  flex: 0 0 auto;
+  display: flex; gap: 2px; padding: 0 10px; background: var(--bg);
+  border-bottom: 1px solid var(--linea); overflow-x: auto;
+  /* en movil las seis no caben: se arrastran, y cada una encaja al soltar */
+  scroll-snap-type: x proximity; scrollbar-width: none;
+}
+#pestanas::-webkit-scrollbar { display: none; }
+.pestana { scroll-snap-align: center; }
+.pestana {
+  display: flex; align-items: center; gap: 8px; padding: 9px 13px;
+  border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0;
+  background: none; color: var(--tenue); white-space: nowrap; cursor: pointer;
+  position: relative; top: 1px;
+}
+.pestana:hover:not(:disabled) { color: var(--texto); }
+.pestana.activa {
+  background: var(--panel); border-color: var(--linea); color: var(--texto);
+}
+.pestana .orden { font-size: 11px; color: var(--tenue); }
+.pestana.activa .orden { color: var(--acento); }
+.pestana[data-estado="bloqueado"] { opacity: .45; }
+.pestana:disabled { cursor: not-allowed; }
+
+.punto {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--tenue);
+  flex: 0 0 auto;
+}
+.punto.pendiente { background: var(--punto-pendiente); }
+.punto.bloqueado { background: var(--punto-bloqueado); }
+.punto.listo { background: var(--ok); }
+.punto.obsoleto { background: var(--aviso); }
+.punto.error { background: var(--malo); }
+.punto.ejecutando { background: var(--acento); animation: latido 1s infinite; }
+@keyframes latido { 50% { opacity: .25; } }
+
+.subpestanas {
+  display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--linea);
+  overflow-x: auto; scrollbar-width: none;
+}
+.subpestanas::-webkit-scrollbar { display: none; }
+.subpestana {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; color: var(--tenue); padding: 6px 12px; white-space: nowrap;
+}
+.subpestana.activa { color: var(--texto); border-bottom-color: var(--acento); }
+/* Una subpestana vacia se deshabilita, pero sigue diciendo que existe. */
+.subpestana:disabled { opacity: .45; }
+.subpestana .meta { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- cuerpo */
+
+/* min-height:0 es lo que deja que el panel ruede por dentro: sin eso un hijo
+   alto estira el flex y el scroll se va a la pagina, que tiene overflow:hidden. */
+#cuerpo { display: flex; flex: 1; min-height: 0; }
+#panel {
+  flex: 1; min-width: 0; overflow-y: auto;
+  padding: 18px var(--margen-panel) 60px;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+.contenido { max-width: 1180px; margin: 0 auto; }
+/* una pestana puede llevar mas de un paso (Origen = ingesta + brief) */
+.paso + .paso { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--linea); }
+
+.bloque {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 11px;
+  padding: 15px 17px; margin-bottom: 16px;
+}
+.bloque > h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--acento); margin-bottom: 12px;
+}
+.bloque.tenue { background: var(--hueco); }
+.bloque > h2 .contador { color: var(--tenue); font-weight: 400; letter-spacing: 0; }
+
+/* --------------------------------------------------------------- plegables
+
+   Casi todo lo que hay en una pantalla se decide una vez y luego estorba: los
+   ajustes de una ingesta que ya corrio, la ficha tecnica de una generacion, el
+   catalogo de 300 voces cuando ya hay una elegida. Se pliega, PERO el summary
+   lleva siempre un resumen de lo que hay dentro: plegar sin resumen es esconder
+   informacion, y eso es justo lo que no se quiere. */
+
+.plegable { padding: 0; }
+.plegable > summary {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 13px 16px; list-style: none; border-radius: 11px;
+}
+.plegable > summary::-webkit-details-marker { display: none; }
+.plegable > summary:hover { background: var(--hover); }
+/* El h2 del summary NO es hijo directo del .bloque, asi que no le llegaba el
+   estilo de '.bloque > h2' y salia como un titulo de navegador: enorme y
+   blanco. Mismo aspecto que el de cualquier otro bloque. */
+.plegable > summary > h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--acento); margin: 0; flex: 0 0 auto; min-width: 0;
+  /* Un título NUNCA parte. «3 · ASSETS» en dos renglones y «CALIDAD Y RITMO DE
+     PLANO» en tres es lo que hacía ilegible esta pantalla en un móvil: la
+     cabecera medía tres líneas de alto para decir dos palabras. El que cede
+     sitio es el resumen, que para eso es el accesorio. */
+  white-space: nowrap;
+}
+.plegable > summary .flecha {
+  color: var(--tenue); flex: 0 0 auto; font-size: 11px;
+  transition: transform .15s; transform: rotate(0deg);
+}
+.plegable[open] > summary .flecha { transform: rotate(90deg); }
+.plegable[open] > summary { border-bottom: 1px solid var(--linea-suave); border-radius: 11px 11px 0 0; }
+/* El resumen dice lo que hay dentro sin abrirlo; cede sitio antes que nada. */
+.plegable > summary .resumen {
+  color: var(--tenue); font-size: 12px; min-width: 0; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plegable > summary .resumen b { color: var(--texto); font-weight: 600; }
+.plegable > .cuerpo-plegable { padding: 14px 16px 15px; }
+
+/* En estrecho, la cabecera se PARTE EN DOS RENGLONES en vez de recortar.
+   Con los tres en la misma línea, un móvil de 375 dejaba «sets, reparto, mapas
+   y cabe…»: el resumen existe para saber lo que hay dentro sin abrirlo, y
+   cortado a la mitad no sirve para eso. Arriba el título y su estado, que son
+   cortos y no parten; abajo el resumen entero, con las líneas que necesite. */
+@media (max-width: 620px) {
+  .plegable > summary {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 4px 8px;
+    align-items: center;
+  }
+  .plegable > summary .resumen {
+    grid-column: 1 / -1; white-space: normal; overflow: visible;
+    text-overflow: clip; line-height: 1.35;
+  }
+  .plegable > summary > h2 { white-space: normal; }
+}
+/* Un plegable dentro de un bloque no repite el mismo marco: seria una caja
+   identica dentro de otra y no se sabria donde acaba una. */
+.bloque .plegable { background: var(--hueco); }
+
+.pastilla {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  border: 1px solid var(--linea); border-radius: 999px; padding: 2px 9px;
+  color: var(--tenue); white-space: nowrap;
+}
+.pastilla.ok, .pastilla.listo { color: var(--ok); border-color: var(--ok-borde); }
+.pastilla.obsoleto { color: var(--aviso); border-color: var(--aviso-borde); }
+.pastilla.aviso { color: var(--aviso); border-color: var(--aviso-borde); }
+button.pastilla { cursor: pointer; }
+
+/* EL DIBUJO QUE YA NO ES DE ESTA FRASE. Va pegado ENCIMA del campo de feedback
+   -- no es un aviso suelto: es el principio de la frase «y si no vale, escribe
+   que cambiar» --, asi que comparte su borde y no deja hueco abajo. Nombre
+   propio y no `.obsoleta` a secas: eso ya es de las tarjetas de paso. */
+.aviso-obsoleta {
+  border: 1px solid var(--aviso-borde); border-bottom: 0;
+  border-radius: 10px 10px 0 0; padding: 9px 12px 7px; margin-top: 12px;
+  background: color-mix(in srgb, var(--aviso) 7%, transparent);
+}
+.aviso-obsoleta .meta { display: block; margin-top: 3px; }
+.pastilla.error { color: var(--malo); border-color: var(--malo-borde); }
+.pastilla.ejecutando { color: var(--acento); border-color: var(--acento-borde); }
+.cabecera-paso .titulo { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.cabecera-paso .titulo h2 { font-size: 17px; }
+/* El resumen del paso cede sitio antes que el estado o el boton de guardar. */
+.cabecera-paso .titulo .resumen-paso {
+  color: var(--tenue); font-size: 12px; flex: 1 1 120px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cabecera-paso .guardar-paso.limpio { display: none; }
+
+.caja-error, .caja-aviso, .caja-info {
+  border: 1px solid var(--linea); border-left-width: 3px; border-radius: 8px;
+  padding: 10px 12px; font-size: 13px; white-space: pre-wrap; word-break: break-word;
+}
+.caja-error { border-left-color: var(--malo); background: var(--error-fondo); color: var(--error-texto); }
+.caja-aviso { border-left-color: var(--aviso); background: var(--aviso-fondo); color: var(--aviso-texto); }
+.caja-info  { border-left-color: var(--acento); background: var(--info-fondo); color: var(--texto); }
+.caja-error b, .caja-aviso b { color: var(--blanco); }
+.caja-error .titular { white-space: pre-wrap; }
+.detalle-tecnico { margin-top: 8px; }
+.detalle-tecnico summary { color: var(--tenue); font-size: 12px; cursor: pointer; }
+.detalle-tecnico pre {
+  margin: 8px 0 0; padding: 8px 10px; background: var(--volcado-fondo); border-radius: 6px;
+  border: 1px solid var(--volcado-borde); color: var(--volcado-texto); font-size: 12px;
+  max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- progreso */
+
+/* El progreso sale DEBAJO del boton que lo lanzo, dentro de su lanzador. Sin el
+   margen, la barra queda pegada al boton y parece parte de el. */
+.lanzador > [data-trabajo]:not(:empty) { margin-top: 10px; }
+
+.trabajo { border: 1px solid var(--linea); border-radius: 9px; padding: 10px 12px; }
+.trabajo .fila { justify-content: space-between; }
+.barra {
+  height: 6px; background: var(--surco); border-radius: 3px; overflow: hidden;
+  margin-top: 8px;
+}
+.barra i { display: block; height: 100%; background: var(--acento); width: 0; transition: width .25s; }
+.trabajo.listo .barra i { background: var(--ok); }
+.trabajo.error .barra i { background: var(--malo); }
+/* Una línea: qué está haciendo, cuánto lleva de cuánto, y el botón de parar.
+   El mensaje cede el sitio —es lo único que puede acortarse sin perder un dato—
+   y el reloj no parte nunca, que es una etiqueta corta. */
+.trabajo > .fila { align-items: baseline; gap: 8px; }
+.trabajo .mensaje {
+  font-size: 13px; color: var(--texto); flex: 1 1 auto; min-width: 0;
+}
+.trabajo .reloj {
+  font-size: 12px; color: var(--tenue); font-variant-numeric: tabular-nums;
+  flex: 0 0 auto; white-space: nowrap; cursor: help;
+}
+/* pasada la estimacion la barra deja de avanzar y se raya: sigue trabajando,
+   pero ya no hay ninguna cuenta atras que merezca ensenarse */
+.barra.esperando {
+  background: repeating-linear-gradient(115deg, var(--surco) 0 8px, var(--surco-alto) 8px 16px);
+  animation: correr 1.1s linear infinite;
+}
+@keyframes correr { to { background-position: 32px 0; } }
+
+/* ---------------------------------------------------------------- versiones
+
+   Cuatro lineas ("1 version(es)", el desplegable, "Revertir a esta" y "activa:
+   v1") para algo que se toca una vez cada muchas sesiones. Ahora es una sola
+   linea plegada, y con una unica version ni eso: una pastilla. El desplegable
+   llevaba max-width:520px, o sea que en un movil de 375 se salia de la pantalla
+   arrastrando la pagina entera. */
+
+.versiones { display: inline-block; }
+.versiones > summary {
+  cursor: pointer; color: var(--tenue); font-size: 12px;
+  list-style: none; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--linea); border-radius: 999px; padding: 2px 10px;
+}
+.versiones > summary::-webkit-details-marker { display: none; }
+.versiones > summary:hover { border-color: var(--acento); color: var(--texto); }
+.versiones > summary b { color: var(--texto); font-weight: 600; }
+.versiones .cuerpo-versiones {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px;
+}
+/* min-width:0 es lo que permite que un select encoja por debajo del ancho de su
+   opcion mas larga; sin eso ningun max-width le hace efecto. */
+.versiones select { flex: 1 1 240px; min-width: 0; max-width: 100%; }
+
+/* ---------------------------------------------------------------- transcript */
+
+.transcript { max-height: 62vh; overflow-y: auto; border: 1px solid var(--linea); border-radius: 9px; }
+.linea-transcript.marcada { background: var(--marcado); }
+.linea-transcript .t {
+  color: var(--acento); font-size: 12px; min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- galerias */
+
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.miniatura {
+  border: 1px solid var(--linea); border-radius: 8px; overflow: hidden;
+  background: var(--hueco); cursor: zoom-in;
+}
+.miniatura img { display: block; width: 100%; height: auto; }
+.miniatura .pie {
+  padding: 5px 8px; font-size: 11px; color: var(--tenue);
+  display: flex; justify-content: space-between; gap: 6px;
+}
+.miniatura .pie b { color: var(--texto); font-weight: 600; }
+
+/* Los arquetipos se eligen mirandolos: la muestra manda y el texto acompana. */
+.galeria.arquetipos { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.tarjeta.arquetipo { cursor: pointer; display: block; }
+.tarjeta.arquetipo .muestra svg { display: block; width: 100%; height: auto; }
+.tarjeta.arquetipo .titulo { align-items: center; gap: 8px; }
+.tarjeta.arquetipo.apagado { opacity: .42; }
+.tarjeta.arquetipo.apagado .muestra { filter: grayscale(1); }
+
+/* Las cartelas y las transiciones se eligen igual: mirandolas. Las tarjetas son
+   mas anchas porque las dos muestras son 16:9 y a 230 px no se lee el texto. */
+.galeria.cartelas, .galeria.transiciones {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.tarjeta.cartela, .tarjeta.transicion { cursor: pointer; display: block; }
+.tarjeta.cartela .muestra svg, .tarjeta.transicion canvas {
+  display: block; width: 100%; height: auto; border-radius: 6px;
+}
+.tarjeta.cartela .titulo, .tarjeta.transicion .titulo {
+  align-items: center; gap: 8px;
+}
+.tarjeta.cartela.apagado, .tarjeta.transicion.apagado { opacity: .42; }
+.tarjeta.cartela.apagado .muestra { filter: grayscale(1); }
+.tarjeta.transicion.apagado canvas { filter: grayscale(1); }
+.efecto-sfx .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.efecto-sfx .icono {
+  border: 1px solid var(--borde); border-radius: 6px;
+  padding: 1px 6px; line-height: 1.5; background: none;
+  color: var(--tenue, #c9c2b4); cursor: pointer; flex: none;
+}
+.efecto-sfx .icono:hover { border-color: var(--acento, #d8a657); }
+.efecto-sfx .icono.activo { border-color: var(--acento, #d8a657); color: var(--acento, #d8a657); }
+/* Vetado se ve vetado: sigue en la lista —para poder levantarlo— pero tachado,
+   porque en el vídeo ya no suena. */
+.efecto-sfx.vetado .meta { text-decoration: line-through; opacity: .55; }
+.interruptor { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+
+/* --------------------------------------- editar los rotulos a mano (callouts)
+ * Los tiradores viven DENTRO del SVG de la capa, asi que se escalan con el
+ * zoom del plano. vector-effect los mantiene finos: sin el, en un zoom cerrado
+ * el marco de un rotulo se convierte en una banda. */
+
+.visor.editando { cursor: crosshair; }
+.marco-rotulo.sel { fill: rgba(216, 166, 87, .16); stroke-dasharray: none; }
+.tirador.tamano { cursor: nwse-resize; }
+.tirador.destino { fill: var(--acento); stroke: var(--fondo); cursor: grab; }
+.tirador.salida { fill: var(--linea); stroke: var(--fondo); cursor: grab; }
+.panel-rotulo .campo { margin-bottom: 8px; }
+.panel-rotulo .acciones { flex-wrap: wrap; gap: 8px; }
+
+/* En movil los mandos del rotulo van a lo ancho y con altura de dedo: el panel
+   sale justo debajo del video, que es donde esta mirando quien acaba de pausar. */
+@media (max-width: 640px) {
+  .panel-rotulo .acciones button { flex: 1 1 46%; min-height: 40px; }
+  .panel-rotulo .fila { flex-wrap: wrap; }
+}
+
+/* ------------------------------------------- fotogramas de estilo (assets) */
+
+/* La rejilla rueda dentro de su caja: son hasta 80 fotogramas y esta seccion va
+   la primera de la pestana, asi que sin tope habria que bajar media pantalla
+   para llegar a lo demas. */
+.galeria.estilo {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin-top: 12px;
+  max-height: 46vh; overflow-y: auto; padding-right: 4px;
+}
+.candidato.elegida { border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento) inset; }
+.candidato.elegida .pie b { color: var(--acento); }
+/* los casi negros no se esconden: el juicio automatico puede equivocarse */
+.candidato.descartado { opacity: .45; }
+.candidato.descartado:hover { opacity: 1; }
+.guia-estilo .paleta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.guia-estilo .muestra {
+  width: 74px; height: 46px; border-radius: 7px; border: 1px solid var(--linea);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.guia-estilo .muestra .hex {
+  font-size: 10px; background: var(--velo); color: var(--blanco);
+  border-radius: 4px; padding: 0 4px; margin-bottom: 3px;
+}
+
+#lupa {
+  position: fixed; inset: 0; background: var(--velo); z-index: 60;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px; cursor: zoom-out; overflow-y: auto;
+}
+#lupa img { max-width: 100%; max-height: 100%; }
+/* Con ficha, la imagen deja sitio para ella y no se come la pantalla entera. */
+#lupa:has(.ficha-lupa) img { max-height: 50vh; }
+
+/* ---------------------------------------------------------------- tarjetas */
+
+.tarjeta {
+  background: var(--hueco); border: 1px solid var(--linea); border-radius: 10px;
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.tarjeta.obsoleta { border-color: var(--aviso-borde); }
+.tarjeta .lienzo { position: relative; background: var(--lienzo); }
+.tarjeta .lienzo img { display: block; width: 100%; height: auto; }
+.tarjeta .lienzo canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.tarjeta .cuerpo { padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; }
+.tarjeta .titulo { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.tarjeta .titulo .id { color: var(--acento); font-weight: 700; }
+.tarjeta .narracion { font-size: 12px; color: var(--tenue); max-height: 60px; overflow: auto; }
+
+.herramientas { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.herramientas .color { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.herramientas .color.sel { border-color: var(--texto); }
+.tira-capturas .captura {
+  border: 1px solid var(--linea); border-radius: 9px; overflow: hidden;
+  background: var(--hueco); display: flex; flex-direction: column;
+}
+.tira-capturas .captura.aplicada { opacity: .55; }
+.tira-capturas .captura img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+.tira-capturas .captura .pie {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 6px 9px 0;
+}
+.tira-capturas .captura .nota { padding: 4px 9px; font-size: 12px; color: var(--tenue); }
+.tira-capturas .captura .fila { padding: 0 9px 8px; }
+
+#capturador {
+  position: fixed; inset: 0; z-index: 65; background: var(--velo);
+  display: flex; align-items: center; justify-content: center; padding: 18px;
+}
+#capturador .cuadro {
+  background: var(--panel); border: 1px solid var(--acento); border-radius: 12px;
+  padding: 12px 14px; width: min(1100px, 100%); max-height: 100%; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#capturador .cab { display: flex; gap: 10px; align-items: baseline; }
+#capturador .lienzo-capturado { position: relative; line-height: 0; }
+#capturador .lienzo-capturado .fondo {
+  display: block; width: 100%; height: auto; border-radius: 8px; background: var(--negro);
+}
+#capturador .lienzo-capturado .trazos {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  cursor: crosshair; touch-action: none;
+}
+
+/* ---------------------------------------------------------------- brief */
+
+.horquilla {
+  border: 1px solid var(--linea); border-radius: 9px; padding: 9px 11px; background: var(--hueco);
+}
+.horquilla .tramo {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  padding: 3px 0; border-bottom: 1px solid var(--linea-suave);
+}
+.horquilla .tramo:last-of-type { border-bottom: none; }
+.horquilla .tramo b { min-width: 78px; }
+.horquilla .tramo .numerico { color: var(--acento); }
+.marca { color: var(--acento); }
+
+/* Idiomas de salida: lista ORDENADA, se arrastra. El primero es el que se
+   redacta, asi que el orden no es cosmetico. */
+.idiomas { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.idioma {
+  display: flex; align-items: center; gap: 7px; cursor: grab;
+  border: 1px solid var(--linea); border-radius: 999px; padding: 3px 8px 3px 6px;
+  background: var(--hueco); user-select: none;
+}
+.idioma:active { cursor: grabbing; }
+.idioma.principal { border-color: var(--acento); background: var(--marcado); }
+.idioma .orden {
+  font-size: 11px; color: var(--tenue); font-variant-numeric: tabular-nums;
+  min-width: 12px; text-align: right;
+}
+.idioma .nombre { font-weight: 600; }
+.idioma button { padding: 0 5px; line-height: 1.4; border-color: transparent; }
+.idioma .quitar:hover { border-color: var(--malo); color: var(--malo); }
+.bloque-guion .cabecera {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 12px; line-height: 1.2;
+  /* una línea y no dos: el nombre del bloque y su cuenta van juntos o no van */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bloque-guion .id { color: var(--acento); font-weight: 700; font-size: 13px; flex: 0 0 auto; }
+.bloque-guion .cuenta { font-size: 11px; color: var(--tenue); flex: 0 1 auto; overflow: hidden;
+  text-overflow: ellipsis; }
+.bloque-guion textarea.tocado { border-color: var(--acento); }
+/* Sin scroll propio: lo pone crecerConElTexto() midiendo el contenido. */
+textarea.crece { overflow-y: hidden; resize: none; }
+.meta.fuera { color: var(--aviso); }
+.tarjeta-preset.con-contenido > .cabecera {
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.tarjeta-preset > .dentro {
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--linea);
+}
+.tarjeta-preset .cuerpo { min-width: 0; }
+/* la rejilla para elegir miniatura son fotogramas pequenos: solo se mira cual */
+.galeria.estilo.mini { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); max-height: 24vh; }
+
+/* Etiqueta de la papelera. Un preset y un proyecto se ensenan juntos pero lo
+   que se pierde al borrarlos no se parece en nada, asi que cada fila dice lo
+   que es y con que color. */
+.tag-papelera {
+  font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--linea);
+}
+.tag-papelera.proyecto { color: var(--tenue); background: var(--boton); }
+.tag-papelera.preset { color: var(--acento2); background: var(--info-fondo); border-color: var(--acento-borde); }
+.requisito.listo { border-color: var(--ok-borde); }
+.requisito .orden { font-size: 10px; color: var(--tenue2); }
+.requisito .nombre { font-weight: 600; color: var(--aviso); }
+.requisito.listo .nombre { color: var(--ok); }
+.requisito .meta { font-size: 11px; }
+
+/* ---------------------------------------------------------------- voz */
+
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.preset {
+  text-align: left; padding: 10px 12px; border-radius: 9px; background: var(--hueco);
+  border: 1px solid var(--linea); cursor: pointer;
+}
+.preset.sel { border-color: var(--acento); background: var(--marcado); }
+.preset .nombre { font-weight: 600; margin-bottom: 4px; }
+.preset .descripcion { font-size: 12px; color: var(--tenue); }
+.preset .mandos { font-size: 11px; color: var(--acento); margin-top: 6px; }
+.voz {
+  display: flex; gap: 9px; align-items: baseline; padding: 5px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--linea-suave);
+}
+.voz:hover { background: var(--hover); }
+.voz.sel { background: var(--marcado); }
+.voz .nombre { flex: 1; }
+.voz .idioma { font-size: 11px; color: var(--tenue); }
+.voz .nativa { font-size: 11px; color: var(--ok); }
+
+.emociones { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+audio { width: 100%; margin-top: 8px; filter: invert(.9) hue-rotate(180deg); }
+.guion-audio .marca { color: var(--acento); font-size: 12px; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.guion-audio .palabra { transition: color .15s; }
+.guion-audio .palabra.leida { color: var(--texto); }
+.guion-audio .palabra.sonando { background: var(--resalte); border-radius: 3px; color: var(--texto); }
+/* Trozos del guion que llevan un fotograma real de referencia. La propuesta va
+   punteada y lo aprobado en solido: se distingue lo decidido de lo sugerido sin
+   tener que pinchar. */
+.guion-audio .palabra.con-referencia { cursor: help; }
+.guion-audio .palabra.con-referencia.propuesta {
+  border-bottom: 2px dotted var(--acento2); color: var(--texto);
+}
+.guion-audio .palabra.con-referencia.aprobada {
+  border-bottom: 2px solid var(--acento2); color: var(--texto);
+}
+/* La camara mueve a la vez el plano y su capa vectorial, igual que el render:
+   la capa esta dibujada en el espacio del plano, no en el del video. */
+.visor .camara { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.visor .camara img { display: block; }
+.visor .camara .capa { position: absolute; left: 0; top: 0; }
+.visor .camara .capa svg { display: block; width: 100%; height: 100%; }
+.visor .cartel {
+  position: absolute; left: 10px; bottom: 10px; background: var(--velo-suave);
+  padding: 3px 9px; border-radius: 6px; font-size: 12px; color: var(--tenue);
+}
+.mando { display: flex; gap: 10px; align-items: center; margin-top: 9px; }
+.mando .tiempo { font-size: 12px; color: var(--tenue); font-variant-numeric: tabular-nums; min-width: 96px; }
+.linea-tiempo .lleno { position: absolute; top: 8px; left: 0; height: 6px; background: var(--acento); border-radius: 3px; }
+.linea-tiempo .corte { position: absolute; top: 5px; width: 1px; height: 12px; background: var(--tenue2); }
+
+video { width: 100%; border-radius: 9px; border: 1px solid var(--linea); background: var(--negro); }
+/* `en-suave` y `en-acento` NO aparecen escritas en el codigo: se construyen
+   como `en-${corte}` (ver el velo del visor en app.js). Un barrido de clases
+   sin usar las da por muertas y se las lleva; si vuelve a pasar, esto lo
+   explica. */
+.visor .velo-visor.en-suave.va {
+  background: var(--negro); animation: corte-suave .34s ease-out;
+}
+.visor .velo-visor.en-acento.va {
+  background: var(--acento); animation: corte-acento .22s ease-out;
+}
+@keyframes corte-suave { from { opacity: .85; } to { opacity: 0; } }
+@keyframes corte-acento { from { opacity: .5; } to { opacity: 0; } }
+
+/* Una seccion DENTRO de una tarjeta: mismo lenguaje, un escalon menos de peso.
+   Es lo que permite juntar personajes con piezas —o el grafismo con el sonido—
+   sin que cada una pierda su propio estado de un vistazo. */
+.plegable.dentro { border-color: var(--linea); background: transparent; }
+.plegable.dentro > summary h2 { font-size: 14px; }
+
+/* ---------------------------------------------------------------- lateral */
+
+#lateral {
+  width: var(--lateral); flex: 0 0 var(--lateral); border-left: 1px solid var(--linea);
+  background: var(--panel); display: flex; flex-direction: column;
+}
+#lateral.plegado { display: none; }
+
+/* ------------------------------------------------------------ bloc de enlaces
+   Cajon propio, siempre flotante (tambien en pantalla ancha): es una libreta que
+   se abre, se apunta algo y se cierra, no una columna de trabajo como la
+   bitacora. */
+#enlaces {
+  position: fixed; z-index: 60; top: 0; right: 0; bottom: 0;
+  width: min(440px, 94vw); display: flex; flex-direction: column;
+  background: var(--panel); border-left: 1px solid var(--linea);
+  box-shadow: var(--sombra); padding-top: env(safe-area-inset-top);
+}
+#enlaces.plegado { display: none; }
+#lista-enlaces .plegable { background: var(--hueco); }
+.lista-enlaces.plegado { display: none; }
+.lateral-cab {
+  display: flex; gap: 8px; align-items: center; padding: 10px 12px;
+  border-bottom: 1px solid var(--linea);
+}
+.lateral-cab h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--acento); flex: 1; }
+#bitacora { overflow-y: auto; padding: 8px 12px 30px; }
+.evento { padding: 6px 0; border-bottom: 1px solid var(--linea-suave); font-size: 12px; }
+.evento .cab { display: flex; gap: 8px; align-items: baseline; }
+.evento .fecha { color: var(--tenue); font-variant-numeric: tabular-nums; }
+.evento .nombre { color: var(--texto); font-weight: 600; }
+.evento .paso { color: var(--acento); }
+.evento .datos { color: var(--tenue); word-break: break-word; }
+
+/* ---------------------------------------------------------------- toast */
+
+#toast {
+  position: fixed; right: 18px; bottom: 18px; background: var(--ok); color: var(--sobre-acento);
+  font-weight: 600; padding: 10px 16px; border-radius: 9px; opacity: 0;
+  transition: opacity .25s; pointer-events: none; z-index: 70; max-width: 460px;
+}
+#toast.ver { opacity: 1; }
+#toast.malo { background: var(--aviso); color: var(--blanco); }
+
+/* ---------------------------------------------------------------- varios */
+
+.vacio { color: var(--tenue); font-size: 13px; padding: 18px 0; }
+.tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabla td, .tabla th { text-align: left; padding: 4px 10px 4px 0; vertical-align: top; }
+.tabla th { color: var(--tenue); font-weight: 400; white-space: nowrap; }
+/* Las de clave/valor (tablaDatos) llevan textos largos —un titulo de YouTube, la
+   ruta de un .vtt— que con th nowrap empujaban la tabla fuera de la pantalla.
+   Aqui el valor puede partir; en movil ademas se apilan (ver el bloque final). */
+.tabla.pares td { word-break: break-word; }
+.cargando { color: var(--tenue); font-size: 13px; }
+.oculto { display: none; }
+
+/* Fila de botones de una accion. En movil el principal ocupa la linea entera:
+   es el que se busca con el pulgar, y de 90px se falla mas de lo que parece. */
+.acciones { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ------------------------------------------------------- ajuste del CLI
+   Solo clases nuevas: las de arriba las comparten varias pantallas y tocarlas
+   mueve cosas que no se ven desde aqui. */
+
+/* Los ajustes finos van plegados: la pantalla que se usa cada dia es la de
+   arriba, y cada fase ya trae su modelo y su esfuerzo elegidos. */
+.avanzadas { margin-bottom: 14px; }
+.avanzadas > summary { cursor: pointer; padding: 4px 0; }
+.avanzadas > summary:hover { color: var(--texto); }
+.avanzadas[open] > summary { margin-bottom: 8px; }
+.avanzadas > summary .meta { color: var(--acento); }
+.ajuste-cli .campo { margin-bottom: 0; }
+.tiempo-cli .cifra {
+  font-size: 17px; font-weight: 600; color: var(--acento); font-variant-numeric: tabular-nums;
+}
+.tiempo-cli .pista { flex: 1 0 100%; margin-top: 0; }
+
+/* Una cifra de tiempo nunca se ensena sin decir que es. La estimada va con
+   borde discontinuo (es una cuenta), la medida en verde (son ejecuciones). */
+.sello-cifra {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+  color: var(--tenue); border: 1px dashed var(--linea); border-radius: 999px; padding: 1px 8px;
+}
+.sello-cifra.medida { color: var(--ok); border-style: solid; border-color: var(--ok-borde); }
+.tabla-cli { overflow-x: auto; margin-top: 8px; }
+.tabla-cli .tabla { min-width: 560px; }
+.comparativa-cli tr { cursor: pointer; }
+.comparativa-cli tr:first-child { cursor: default; }
+.comparativa-cli td { border-top: 1px solid var(--linea-suave); }
+.comparativa-cli tr.recomendada td { background: var(--info-fondo); }
+.comparativa-cli tr.actual td {
+  background: var(--marcado); box-shadow: inset 2px 0 0 var(--acento);
+}
+
+.recomendacion-cli { margin-top: 10px; }
+.recomendacion-cli .pista { margin-top: 6px; }
+.pastilla.confianza.alta { color: var(--ok); border-color: var(--ok-borde); }
+.pastilla.confianza.media { color: var(--acento); border-color: var(--acento-borde); }
+.pastilla.confianza.baja { color: var(--aviso); border-color: var(--aviso-borde); }
+.pastilla.confianza.ninguna { color: var(--tenue); }
+.votos { gap: 4px; }
+
+/* ------------------------------------------------- rendimiento y papelera */
+
+#conservacion, #rendimiento, #papelera, #cuadro-texto {
+  position: fixed; inset: 0; z-index: 66; background: var(--velo);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+#conservacion .cuadro, #rendimiento .cuadro, #papelera .cuadro,
+#cuadro-texto .cuadro {
+  background: var(--panel); border: 1px solid var(--acento); border-radius: 12px;
+  padding: 13px 16px; width: min(1100px, 100%); max-height: 100%; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#papelera .cuadro { width: min(720px, 100%); }
+#conservacion .cuadro { width: min(760px, 100%); }
+.marcador-conservacion .cifra {
+  flex: 1 1 130px; padding: 10px 12px; border: 1px solid var(--linea);
+  border-radius: 10px; background: var(--hueco);
+}
+.marcador-conservacion .cifra b {
+  display: block; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.marcador-conservacion .cifra span { font-size: 11px; color: var(--tenue); }
+.marcador-conservacion .cifra.ok b { color: var(--ok); }
+.marcador-conservacion .cifra.malo b { color: var(--malo); }
+#cuadro-texto .cuadro { width: min(820px, 100%); }
+#cuadro-texto .texto-largo {
+  margin: 0; padding: 12px; background: var(--hueco); border: 1px solid var(--linea);
+  border-radius: 8px; white-space: pre-wrap; word-break: break-word; line-height: 1.6;
+  font: inherit; overflow-y: auto;
+}
+#conservacion .cab, #rendimiento .cab, #papelera .cab, #cuadro-texto .cab {
+  display: flex; gap: 10px; align-items: baseline;
+}
+#conservacion .cab b, #rendimiento .cab b, #papelera .cab b,
+#cuadro-texto .cab b {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--acento);
+}
+#rendimiento .cuerpo h2 { font-size: 13px; }
+#rendimiento .nav-rendimiento { margin-bottom: 0; flex-wrap: wrap; }
+#rendimiento .tabla tr.con-cli th { color: var(--texto); }
+#rendimiento .tabla td, #rendimiento .tabla th { padding-bottom: 6px; }
+#papelera .tabla th { color: var(--texto); }
+#papelera .tabla tr[data-carpeta] td, #papelera .tabla tr[data-carpeta] th {
+  border-top: 1px solid var(--linea); padding-top: 7px; padding-bottom: 7px;
+}
+/* lo marcado para borrar se ve en rojo ANTES de confirmar nada */
+#papelera .tabla tr.marcada th, #papelera .tabla tr.marcada td { background: var(--malo-fondo); }
+#papelera .tabla tr.marcada th { color: var(--malo); }
+
+/* ------------------------------------------------- galerias con nombre propio
+   Antes iban con grid-template-columns escrito en un atributo style desde el JS.
+   Con la medida metida en el atributo no hay forma de estrecharlas en movil: una
+   rejilla de minimo 340px en una pantalla de 375 deja tarjetas de 340 con 35 de
+   hueco, y el ajuste fino de camara de dentro se sale. */
+
+.galeria.ancha { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.galeria.escenas { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.barra-filtro .fila { gap: 6px; }
+
+/* ============================================================== EL MOVIL
+ *
+ * Esto no es "que no se corte nada": es poder generar un video entero y
+ * revisarlo desde el telefono. Manda el pulgar (mandos grandes y abajo), la
+ * pantalla estrecha (nada de dos columnas) y el hecho de que en tactil NO HAY
+ * hover NI title: lo que solo se contaba en un tooltip habia que sacarlo.
+ */
+
+/* ------------------------------------------------- pantallas medianas y menos */
+@media (max-width: 900px) {
+  /* La bitacora deja de robarle 360px al panel y pasa a ser un cajon. */
+  #lateral {
+    position: fixed; z-index: 59; top: 0; right: 0; bottom: 0;
+    width: min(400px, 92vw); flex-basis: auto;
+    box-shadow: var(--sombra); padding-top: env(safe-area-inset-top);
+  }
+  #velo-lateral {
+    display: block; position: fixed; inset: 0; z-index: 58; background: var(--velo-suave);
+  }
+  #velo-lateral.plegado { display: none; }
+
+  .galeria.escenas, .galeria.ancha { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+}
+
+/* ------------------------------------------------------------------ telefono */
+@media (max-width: 620px) {
+  :root { --margen-panel: 12px; }
+
+  /* Cabecera en una linea de verdad. Lo que se va no se pierde: el nombre del
+     proyecto ya esta en su boton, y el reparto del coste vive en su desglose. */
+  #cabecera { gap: 6px; padding: 0 10px; }
+  #cabecera h1, #meta-proyecto { display: none; }
+  /* El nombre del proyecto es lo unico elastico de la barra: absorbe el sitio
+     que sobra y se recorta cuando no lo hay, para que el coste y los dos
+     botones de la derecha esten SIEMPRE, sea cual sea el nombre. */
+  #btn-proyecto { flex: 1 1 auto; max-width: none; }
+  .crece { flex: 0 1 auto; }
+  #faro {
+    flex: 0 1 auto; min-width: 0; max-width: 82px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #coste, #btn-refrescar, #btn-bitacora { flex: 0 0 auto; }
+  /* El medidor se queda con el TOTAL y la barra de presupuesto, que es lo que
+     se mira de reojo; los tres proveedores estan a un toque, en el desglose. */
+  #coste { gap: 7px; padding: 3px 8px; }
+  #coste .prov:not(.total) { display: none; }
+  #btn-bitacora .etiqueta { display: none; }
+  #btn-bitacora .icono { display: inline; }
+
+  #pestanas { padding: 0 6px; }
+  .pestana { padding: 9px 11px; gap: 6px; }
+
+  /* El desplegable de presets se lee entero o no sirve de nada: compartiendo
+     linea con la etiqueta y los dos botones se quedaba en 107 px, o sea en
+     «Este vídeo (sin pr…». En estrecho, cada cosa en su linea. */
+  .preset-canal { flex-wrap: wrap; }
+  .preset-canal > label { flex: 1 0 100%; }
+  .preset-canal .selector-preset { flex: 1 0 100%; }
+
+  /* ---- dos reglas para toda la interfaz en estrecho ----
+     1. Nada que quepa en una línea se parte en dos.
+     2. Nada que haya que leer se recorta.
+
+     Suenan a lo mismo y son opuestas: en 375 px o cede el ancho o cede el alto.
+     El criterio es qué clase de texto es. Una ETIQUETA —el nombre de un botón,
+     de una pestaña, de un mando— es corta y se reconoce de un vistazo: parte
+     fatal y no se recorta nunca, así que se le da el ancho que necesite. Un
+     TEXTO —un resumen, una pista, una descripción— se lee entero, y ese sí
+     puede ocupar las líneas que haga falta. Lo que no vale es lo que había:
+     etiquetas partidas en tres renglones y resúmenes cortados a la mitad. */
+
+  /* Los botones de acción ocupan la línea entera: así su texto nunca parte y
+     de paso el área de toque deja de ser una tira de 90 px. */
+  .acciones { flex-direction: column; align-items: stretch; gap: 8px; }
+  .acciones > button, .acciones > .fila > button { width: 100%; white-space: nowrap; }
+  .acciones .meta { text-align: left; }
+  /* Un mando y su etiqueta, cada uno en su línea y a lo ancho. */
+  .campo select, .campo input:not([type=checkbox]):not([type=range]),
+  .campo textarea { width: 100%; }
+  .rejilla.cols3, .rejilla.cols2 { grid-template-columns: 1fr; }
+  /* Ninguna etiqueta corta se parte. */
+  .pastilla, .subpestana, .fila-preset .abrir .nombre, .cuenta { white-space: nowrap; }
+  /* Y ningún texto explicativo se corta. */
+  .pista, .caja-info, .caja-aviso, .fila-preset .abrir .meta {
+    white-space: normal; overflow: visible; text-overflow: clip;
+  }
+  .tarjeta-preset img, .tarjeta-preset .sin-imagen { width: 96px; height: 58px; }
+
+  #panel { padding: 14px var(--margen-panel) calc(80px + env(safe-area-inset-bottom)); }
+  .bloque { padding: 13px 13px; margin-bottom: 12px; border-radius: 10px; }
+  .plegable > summary { padding: 12px 13px; }
+  .plegable > .cuerpo-plegable { padding: 12px 13px 13px; }
+  .cabecera-paso .titulo h2 { font-size: 16px; }
+
+  /* Clave encima y valor debajo: en 375px una tabla de dos columnas con un
+     titulo de YouTube dentro medía 529px y arrastraba la pagina entera. */
+  .tabla.pares, .tabla.pares tbody, .tabla.pares tr, .tabla.pares th, .tabla.pares td {
+    display: block; width: 100%;
+  }
+  .tabla.pares tr { padding: 6px 0; border-bottom: 1px solid var(--linea-suave); }
+  .tabla.pares tr:last-child { border-bottom: none; }
+  .tabla.pares th { white-space: normal; padding: 0; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .06em; }
+  .tabla.pares td { padding: 2px 0 0; }
+
+  /* El principal a lo ancho: es el que se pulsa. */
+  .acciones > button.primario { flex: 1 1 100%; padding: 11px 14px; }
+  /* Menos en la barra pegada, que tiene que seguir siendo baja: alli los dos
+     botones se reparten la linea. */
+  .barra-paso { padding: 8px var(--margen-panel); }
+  .barra-paso .acciones { gap: 8px; }
+  .barra-paso .acciones > button { flex: 1 1 0; min-width: 0; padding: 10px 6px; }
+  .barra-paso .pista { margin-top: 6px; }
+  .barra-paso audio { height: 38px; }
+
+  /* El visor de callouts manda: los mandos se parten debajo, y la linea de
+     tiempo se lleva su propia fila entera para poder pinchar un segundo. */
+  .mando { flex-wrap: wrap; }
+  .linea-tiempo { flex: 1 1 100%; order: 5; height: 30px; }
+  .linea-tiempo .surco, .linea-tiempo .lleno { top: 12px; }
+  .linea-tiempo .corte { top: 9px; }
+
+  /* Los modales, a pantalla completa: un cuadro centrado con 20px de aire por
+     todos lados desperdicia media pantalla de telefono. */
+  #capturador, #conservacion, #rendimiento, #papelera, #cuadro-texto { padding: 0; }
+  #capturador .cuadro, #conservacion .cuadro, #rendimiento .cuadro, #papelera .cuadro,
+#cuadro-texto .cuadro {
+    width: 100%; height: 100%; max-height: none; border-radius: 0; border: none;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  #menu-proyectos { left: 8px; right: 8px; width: auto; }
+  #coste-detalle { left: 8px; right: 8px; width: auto; padding: 12px; }
+
+  .galeria { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .galeria.escenas, .galeria.ancha { grid-template-columns: minmax(0, 1fr); }
+  .galeria.estilo { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); max-height: 52vh; }
+  .tira-capturas { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .presets, .emociones { grid-template-columns: minmax(0, 1fr); }
+  .cols2, .cols3 { grid-template-columns: minmax(0, 1fr); }
+  .transcript { max-height: 56vh; }
+  #toast { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: none; }
+}
+
+/* --------------------------------------------------------- dedos, no raton
+   Vale para el movil y para una tablet: lo que decide no es el ancho sino con
+   que se pulsa. 24px de lado se fallan; el minimo comodo son 40. */
+@media (pointer: coarse) {
+  button, select, .subpestana { min-height: var(--toque); }
+  button.mini { min-height: 34px; padding: 6px 12px; }
+  /* Sin esto el navegador espera 300ms por si es doble toque para hacer zoom. */
+  button, .pestana, .subpestana, .palabra, .candidato, .voz, .voz-ficha,
+  .linea-transcript, .miniatura, .color, .idioma { touch-action: manipulation; }
+  /* El play de cada voz: cuadrado, y del tamaño de un dedo. Sin esto la regla de
+     arriba le pone 34 de alto y deja los 24 de ancho: una astilla. */
+  .escucha-voz .escuchar.solo-icono { width: 34px; height: 34px; }
+  input[type=checkbox] { width: 22px; height: 22px; }
+  .campo.plano { gap: 12px; }
+
+  /* EL MICRO. Es la pieza critica: se dicta en todos los campos y con 24x20px
+     se falla constantemente. Cuadrado de 40, y el textarea reserva su hueco
+     para que el cursor no acabe escribiendo debajo del boton. */
+  .caja-campo.area > textarea { min-height: 84px; }
+  /* Grabando el boton crece (lleva el cronometro): ancho minimo, no fijo. */
+
+  .linea-transcript { padding: 9px 11px; }
+  .voz { padding: 9px 10px; }
+  /* Al comentar hay que poder soltar el dedo en una palabra concreta. */
+  .guion-audio { line-height: 2.1; font-size: 16px; }
+}
+
+/* Pantallas cortas y anchas (un movil tumbado): el visor y la galeria de estilo
+   se comen la pantalla entera si se dejan con el tope en vh. */
+@media (max-height: 520px) {
+  .galeria.estilo { max-height: 60vh; }
+  .transcript { max-height: 60vh; }
+}
+
+/* El tercer estado de un requisito: ni hecho ni pendiente, sino esperando a que
+   se decida algo aguas arriba. Decir "aprobado" de lo que nadie ha pedido es
+   verdad de manual y mentira de fondo. */
+.requisito.espera { border-color: var(--linea); opacity: .72; }
+.requisito.espera .nombre { color: var(--tenue); }
+
+/* La caja condensada del guion: los campos respiran menos porque son cinco
+   decisiones seguidas, no cinco pantallas. */
+.compacto .campo { margin-bottom: 12px; }
+.compacto .campo:last-child { margin-bottom: 0; }
+.compacto .pista { margin-top: 3px; }
+
+/* La ficha que acompana a una imagen, dentro de la lupa. */
+#lupa .ficha-lupa {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 10px;
+  padding: 12px 14px; margin-top: 10px; max-width: min(760px, 92vw);
+  max-height: 42vh; overflow-y: auto; text-align: left; cursor: auto;
+}
+/* Una anotación de voz no se locuta: se ve, pero no se ilumina ni se salta. */
+.palabra.anotacion { color: var(--tenue); cursor: default; }
+.seccion-audio.abierta { border-color: var(--acento); background: var(--panel); }
+.seccion-audio .id { color: var(--acento); font-weight: 700; font-size: 12px; }
+.seccion-audio .meta { font-size: 11px; }
+.seccion-audio .flecha { color: var(--tenue); font-size: 11px; }
+
+/* ===================================================================== RECETA
+ *
+ * La barra de arriba de cada pestaña: qué falta y el botón que lo hace todo.
+ * Se distingue del resto con el acento en el borde izquierdo y nada más — es
+ * un bloque de la pantalla, no un cartel: si gritara, la pantalla pasaría a
+ * tener dos cosas compitiendo por ser lo primero que se mira.
+ */
+.bloque.receta {
+  border-left: 3px solid var(--acento);
+  background: linear-gradient(90deg, var(--info-fondo), var(--panel) 40%);
+}
+.tareas-receta .tarea {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--hueco); border: 1px solid var(--linea);
+  font-size: 12px; color: var(--texto);
+}
+.tareas-receta .tarea.hecha { border-color: var(--ok-borde); }
+.tareas-receta .tarea.hecha .nombre { color: var(--tenue); }
+.tareas-receta .tarea.apagada { opacity: 0.45; }
+.tareas-receta .tarea .meta { font-size: 11px; }
+
+/* UNA FAMILIA Y SUS ENTRADAS. La cabecera va sin fondo y con el nombre en
+   negrita: no es una tarea más, es el título de las que vienen detrás. Y las
+   suyas van sangradas y en línea con ella, para que se lea «el sonido: estas
+   dos» y no «tres cosas del mismo tipo» (PENDIENTE 35). */
+.tareas-receta .tarea.familia {
+  background: none; border: none; padding-left: 0; padding-right: 4px;
+  font-weight: 600;
+}
+.tareas-receta .tarea.familia .meta { font-weight: 400; color: var(--tenue); }
+.tareas-receta .tarea.de-familia { margin-left: 14px; }
+
+/* Una casilla con su porqué debajo. El porqué no es decorativo: es lo que
+   permite apagar una tarea opcional sabiendo qué se pierde. */
+.casilla {
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 8px;
+  align-items: start; margin: 8px 0;
+}
+.casilla input { margin-top: 3px; }
+.casilla .pista { grid-column: 2; margin: 0; }
+
+/* En el móvil las píldoras se apilan a lo ancho entero: en 375 px una fila de
+   siete no cabe, y media píldora cortada no dice nada. */
+@media (max-width: 620px) {
+  .tareas-receta .tarea { width: 100%; }
+  .bloque.receta .acciones { flex-direction: column; align-items: stretch; }
+  .bloque.receta .acciones button { width: 100%; }
+}
+
+/* =============================================================== CONFIGURACION
+ *
+ * El cajón de las claves. Misma forma que el de enlaces —cajón derecho con
+ * velo— porque es lo mismo: algo global que se abre desde la barra y se cierra
+ * sin salir de donde estabas.
+ */
+#config {
+  position: fixed; z-index: 60; top: 0; right: 0; bottom: 0;
+  width: min(520px, 96vw); display: flex; flex-direction: column;
+  background: var(--panel); border-left: 1px solid var(--linea);
+  box-shadow: var(--sombra); padding-top: env(safe-area-inset-top);
+}
+#config.plegado { display: none; }
+#cuerpo-config { overflow-y: auto; padding: 12px; }
+
+.bloque-config {
+  background: var(--hueco); border: 1px solid var(--linea);
+  border-radius: 10px; padding: 12px; margin-bottom: 12px;
+}
+.bloque-config h3 { margin: 0 0 4px; font-size: 14px; }
+
+/* Una fila de clave: etiqueta + valor + lo que se puede hacer con ella. En
+   pantalla estrecha se apila, porque tres campos en 375 px son tres campos de
+   ochenta píxeles y ninguno se puede escribir. */
+.fila-clave {
+  display: flex; gap: 8px; align-items: center; margin-top: 8px;
+}
+.fila-clave input { flex: 1; min-width: 0; }
+
+/* Una calidad de imagen, con su precio. Es un boton y no una fila de radio a
+   proposito: lo que se elige aqui es un PRECIO, y el precio tiene que ser lo
+   grande de la fila. La puesta se deshabilita -- volver a elegirla no hace
+   nada -- y se marca con el acento, como cualquier cosa elegida del Estudio. */
+.fila-calidad {
+  display: grid; width: 100%; text-align: left; margin-top: 6px;
+  grid-template-columns: 72px 1fr auto; gap: 2px 10px;
+  background: var(--hueco); border: 1px solid var(--linea);
+  border-radius: 8px; padding: 8px 10px; cursor: pointer;
+}
+.fila-calidad:hover:not(:disabled) { border-color: var(--acento); }
+.fila-calidad.elegida {
+  background: var(--marcado); border-color: var(--acento); cursor: default;
+  opacity: 1;                            /* deshabilitada pero NO apagada: es la que manda */
+}
+.fila-calidad .nombre {
+  grid-row: 1 / span 2; align-self: center;
+  font-weight: 600; text-transform: uppercase;
+  font-size: 11px; letter-spacing: .08em; color: var(--tenue);
+}
+.fila-calidad.elegida .nombre { color: var(--acento); }
+.fila-calidad .precio { font-size: 15px; font-weight: 600; }
+.fila-calidad .veces { grid-column: 3; grid-row: 1; align-self: center; }
+.fila-calidad .desglose { grid-column: 2 / span 2; }
+.fila-clave.columna { flex-direction: column; align-items: stretch; }
+.fila-clave.columna input { width: 100%; }
+.fila-clave .cola {
+  font-family: var(--mono, monospace); color: var(--tenue); flex: 0 0 auto;
+}
+.fila-clave.nueva { border-top: 1px solid var(--linea-suave); padding-top: 10px; }
+
+@media (max-width: 620px) {
+  .fila-clave { flex-direction: column; align-items: stretch; }
+  .fila-clave input, .fila-clave button { width: 100%; }
+}
+
+/* «sigue a S013»: la segunda mitad de un plano que dura el doble. Se marca
+   porque en la rejilla son dos tarjetas con la misma imagen y sin esto se lee
+   como un duplicado. */
+.meta.sigue {
+  color: var(--acento); border: 1px solid var(--acento-borde);
+  border-radius: 999px; padding: 1px 8px; font-size: 11px;
+}
+.plano-direccion .id { font-weight: 700; }
+.plano-direccion .pista { margin: 2px 0 6px; }
+
+/* ------------------------------------ un aviso que lleva a donde se arregla
+ * Un aviso que dice «S025: 13 palabras se comen 4 planos» y te deja a cuarenta
+ * planos de scroll de su cuadro de texto dice QUÉ pasa y no DÓNDE se arregla.
+ * El id es un botón, y la tarjeta parpadea al llegar para no perderla. */
+button.enlace {
+  background: none; border: none; padding: 0; font: inherit;
+  color: var(--acento, #d8a657); text-decoration: underline; cursor: pointer;
+}
+button.enlace:hover { filter: brightness(1.2); }
+.tarjeta.senalado {
+  outline: 2px solid var(--acento, #d8a657);
+  outline-offset: 2px;
+  transition: outline-color .3s ease;
+}
+
+/* La cuenta de palabras de una cartela: en tenue cuando cabe, en aviso cuando
+   se pasa. No se prohíbe escribir de más —eso dejaría la cartela sin poder
+   leerse, que es de donde veníamos— pero se ve mientras se teclea. */
+.meta.aviso { color: var(--aviso, #f5c451); }
+
+/* El veredicto de la revision de imagenes, ENCIMA de la miniatura del plano.
+   Va arriba del todo y no debajo del texto a proposito: lo que dice es sobre
+   la imagen, y hay que leerlo mirandola. Compacto porque en la rejilla caben
+   cuarenta y nueve tarjetas y un parrafo por tarjeta no se lee. */
+.tarjeta > .mirado {
+  margin: 0; border-radius: 0; font-size: 12px; line-height: 1.35;
+  padding: 6px 8px;
+}
+.selector-modo button:hover:not(.activo) { background: var(--hover); color: var(--texto); }
+.selector-modo button.activo {
+  background: var(--acento); color: var(--sobre-acento); font-weight: 600;
+}
+
+body.modo-light #pestanas,
+body.modo-light #btn-proyecto,
+body.modo-light #meta-proyecto,
+body.modo-light #coste { display: none; }
+
+/* ======================================================= modo editor: el pie
+ *
+ * LA PARADA SIGUIENTE, anclada abajo, como el pie del guion del modo light y
+ * por lo mismo (DECISIONES §63): lo que hay encima es un documento que se lee
+ * y la acción es sobre lo que se está mirando. Cuelga del panel, fuera de
+ * `.contenido`, para ir de borde a borde; el panel pasa a columna para que el
+ * pie baje al fondo cuando sobra sitio y `sticky` lo sujete cuando falta (la
+ * misma receta que la barra del modo light, más abajo). */
+#panel.con-pie {
+  display: flex; flex-direction: column; padding-bottom: 0;
+  overflow-x: hidden;
+}
+/* `width: 100%` no sobra: dentro de un contenedor flex el `margin: 0 auto` de
+   la columna absorbe el hueco y la encoge al ancho de su contenido. */
+#panel.con-pie > .contenido { flex: 1 0 auto; width: 100%; padding-bottom: 14px; }
+.pie-editor .lanzador > .fila { align-items: center; gap: 10px; flex-wrap: wrap; }
+.pie-editor .lanzador > .fila > .primario { white-space: nowrap; }
+.pie-editor .lanzador > [data-trabajo]:not(:empty) { margin-top: 8px; }
+/* El enlace de descarga del pie se lee como un boton, que es lo que es. */
+.pie-editor a.boton {
+  display: inline-flex; align-items: center; padding: 6px 12px;
+  border: 1px solid var(--linea); border-radius: 8px; background: var(--boton);
+  color: var(--texto); text-decoration: none; font-size: 13px;
+}
+.pie-editor a.boton:hover { border-color: var(--acento); }
+.previa-editor .light-previa { gap: 10px; }
+@media (max-width: 720px) {
+  .mandos-previa .meta { flex: 1 0 100%; order: 3; }
+  .mandos-previa .crece { display: none; }
+}
+
+/* El encargo: las cajas del material son las del light, y el bloque del
+   vídeo de origen va dentro de su tarjeta sin cabecera propia. */
+.encargo .fuente-light textarea { min-height: 0; }
+.bloque.dentro { padding: 0; border: none; background: none; }
+
+/* ============================================================== modo light */
+
+/* UNA SOLA COLUMNA, A TODO EL ANCHO DE LA SECCIÓN. Estuvo a 640 px con media
+   pantalla vacía al lado; lo que se parte en dos ahora es cada CAJA por dentro
+   —qué es a la izquierda, el campo a la derecha—, que es lo que aprovecha el
+   ancho sin obligar a leer en zigzag. */
+
+.contenido.light { max-width: 1180px; }
+
+.light-cab {
+  display: flex; align-items: baseline; gap: 11px; margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.light-cab h2 { font-size: 19px; }
+
+/* ---- la galería: una parrilla de estilos, como una de vídeos */
+
+.galeria-estilos {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.galeria-estilos .ficha-estilo {
+  position: relative; display: block; text-align: left; padding: 0;
+  overflow: hidden; background: var(--hueco); border: 1px solid var(--linea);
+  border-radius: 12px; cursor: pointer; color: inherit; font: inherit;
+}
+.galeria-estilos .ficha-estilo:hover { border-color: var(--acento); }
+/* La tarjeta es un DIV con un boton grande dentro y no un boton entero: los
+   tres puntos son otro boton, y un boton dentro de otro no es HTML valido --el
+   navegador lo desanida y el clic acaba eligiendo el estilo--. */
+.galeria-estilos .cara-y-cuerpo {
+  display: block; width: 100%; text-align: left; padding: 0; border: none;
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.galeria-estilos .cara-y-cuerpo:hover { border-color: transparent; }
+.galeria-estilos .esquina { position: absolute; top: 6px; right: 6px; }
+.galeria-estilos .puntos {
+  padding: 1px 7px; line-height: 1.2; border-radius: 7px;
+  background: rgba(10, 11, 14, .72); color: var(--texto);
+  border: 1px solid var(--linea);
+}
+.galeria-estilos .menu-estilo {
+  position: absolute; right: 0; top: 26px; z-index: 3;
+  display: flex; flex-direction: column; align-items: stretch;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 9px;
+  overflow: hidden; min-width: 108px;
+}
+.galeria-estilos .menu-estilo.plegado { display: none; }
+.galeria-estilos .menu-estilo button {
+  border: none; border-radius: 0; text-align: left; padding: 7px 12px;
+}
+.galeria-estilos .menu-estilo button:hover { background: var(--hover); }
+/* La caja se reserva aunque no haya imagen: sin ella, la rejilla salta al cargar
+   las miniaturas y lo que estabas a punto de pulsar se mueve.
+
+   32:27 y no 16:9, que es lo que mide la hoja de muestras desde que son las SEIS
+   referencias en dos columnas (tres filas de celdas 16:9 -> 2*16 : 3*9). Con
+   16:9 y `cover`, de las tres filas solo se veia la de en medio. */
+.galeria-estilos .cara {
+  aspect-ratio: 32 / 27; background: var(--lienzo);
+  display: flex; align-items: center; justify-content: center;
+}
+.galeria-estilos .cara img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.galeria-estilos .sin-cara { color: var(--tenue2); font-size: 12px; }
+.galeria-estilos .cuerpo { padding: 9px 12px 11px; }
+.galeria-estilos .nombre { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.galeria-estilos .vinetas { margin: 0; padding: 0; list-style: none; }
+.galeria-estilos .vinetas li {
+  font-size: 12px; color: var(--tenue); line-height: 1.45;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.galeria-estilos .vinetas li::before { content: '· '; color: var(--tenue2); }
+.galeria-estilos .ficha-estilo.nuevo { border-style: dashed; }
+.galeria-estilos .ficha-estilo.nuevo .cara { background: transparent; }
+.galeria-estilos .ficha-estilo.nuevo .mas {
+  font-size: 40px; line-height: 1; color: var(--tenue2); font-weight: 300;
+}
+.galeria-estilos .ficha-estilo.nuevo:hover .mas { color: var(--acento); }
+.galeria-estilos .ficha-estilo.nuevo .pista { margin-top: 2px; }
+
+/* ---- las cajas: qué es a la izquierda, el campo a la derecha */
+
+.bloque-light {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 11px;
+  padding: 13px 15px; margin-bottom: 11px;
+  display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 18px;
+  align-items: start;
+}
+.bloque-light > .titulo { display: flex; flex-direction: column; gap: 2px; }
+.bloque-light > .titulo h3 { font-size: 14px; }
+.bloque-light > .titulo .meta { line-height: 1.35; }
+.bloque-light .campo { margin-bottom: 9px; }
+.bloque-light .campo:last-child { margin-bottom: 0; }
+.bloque-light .mandos > .fila { margin-top: 9px; }
+/* en estrecho se apilan: la columna de 210 px no cabe con el campo al lado */
+@media (max-width: 720px) {
+  .bloque-light { grid-template-columns: 1fr; gap: 9px; }
+}
+
+/* ---- las imágenes de apoyo de una descripción de estilo
+ *
+ * El camino del vídeo le da a la guía veinticuatro fotogramas; el descrito le
+ * daba un párrafo y nada más. Se adjuntan aquí, y se ven pequeñas a propósito:
+ * son material de apoyo, no lo que se juzga. */
+.aportadas .fila { margin: 0 0 8px; gap: 9px; align-items: center; }
+/* El <input type=file> nativo no se puede estilar: se esconde y se pulsa su
+   <label>, que es lo que hace el navegador con un `for`. */
+.oculto {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+/* SE ARRASTRA O SE PULSA, y las dos cosas son el mismo <label>: con `for`
+   apuntando al input escondido, pulsar abre el explorador sin una línea de JS.
+   El borde discontinuo es lo que dice «aquí se suelta» sin escribirlo. */
+.zona-suelta {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  padding: 14px 13px; border-radius: 9px; font-size: 13px; color: var(--tenue);
+  border: 1px dashed var(--linea); background: var(--hueco);
+  transition: border-color .12s, background .12s;
+}
+.zona-suelta:hover { border-color: var(--acento); color: var(--texto); }
+.zona-suelta.encima {
+  border-color: var(--acento); background: var(--marcado); color: var(--texto);
+}
+.zona-suelta .icono { font-size: 17px; opacity: .8; }
+.zona-suelta .meta { margin-left: auto; }
+.zona-suelta.llena { opacity: .5; cursor: not-allowed; }
+.zona-suelta.llena:hover { border-color: var(--linea); color: var(--tenue); }
+.tira-aportadas {
+  display: grid; gap: 5px; margin-top: 2px;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+}
+.aportada { position: relative; border-radius: 7px; overflow: hidden; background: var(--lienzo); }
+.aportada img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
+.aportada .quitar {
+  position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 1.4;
+  font-size: 13px; border-radius: 6px; background: rgba(10, 11, 14, .78);
+  border: 1px solid var(--linea); color: var(--texto);
+}
+.aportada .quitar:hover { border-color: var(--malo-borde); color: var(--malo-texto); }
+
+/* Vídeo O descripción: un interruptor de dos, no dos campos a la vez. */
+.tira-modos { display: flex; gap: 0; margin-bottom: 9px; }
+.tira-modos button {
+  border-radius: 0; background: var(--boton); color: var(--tenue);
+}
+.tira-modos button:first-child { border-radius: 7px 0 0 7px; }
+.tira-modos button:last-child { border-radius: 0 7px 7px 0; }
+.tira-modos button + button { border-left: none; }
+.tira-modos button.activo {
+  background: var(--marcado); color: var(--texto); border-color: var(--acento-borde);
+}
+
+/* El pie va ABAJO DEL TODO y no pegado al scroll: una barra que persigue tapa
+   justo el campo que estás rellenando. */
+.pie-light { padding: 6px 0 4px; }
+.pie-light .fila { align-items: baseline; gap: 11px; }
+
+/* ---- la generación: una barra grande y por dónde va */
+
+.light-generando { max-width: 720px; }
+.light-generando h2 { font-size: 19px; margin-bottom: 14px; }
+.barra.grande { height: 10px; border-radius: 5px; }
+.light-generando .paso-actual {
+  margin-top: 11px; font-size: 15px; color: var(--texto);
+}
+.light-generando > .meta { display: block; margin-top: 3px; }
+.tareas-light { margin: 20px 0 16px; padding: 0; list-style: none; }
+.tareas-light li {
+  display: flex; align-items: baseline; gap: 9px; padding: 4px 0;
+  font-size: 13px; color: var(--tenue2);
+}
+.tareas-light li .marca { width: 13px; flex: 0 0 auto; text-align: center; }
+.tareas-light li.hecha { color: var(--tenue); }
+.tareas-light li.hecha .marca { color: var(--ok); }
+.tareas-light li.ahora { color: var(--texto); font-weight: 600; }
+.tareas-light li.ahora .marca { color: var(--acento); }
+.tareas-light li .pastilla { font-weight: 400; }
+
+/* ---- el deslizador de ritmo
+ *
+ * UN MANDO Y DOS CIFRAS. Debajo no van el mínimo, el máximo ni el umbral de
+ * rótulos: los tres siguen en el modo editor, uno a uno. Aquí lo que se decide
+ * es el ritmo, y lo que se lee es su consecuencia — cada cuánto corta y lo que
+ * cuesta un minuto de vídeo así. */
+input[type=range].ritmo {
+  width: 100%; margin: 2px 0 0; padding: 0; background: transparent;
+  accent-color: var(--acento); cursor: pointer;
+}
+.bloque-light .topes {
+  display: flex; justify-content: space-between; gap: 4px;
+  margin-top: 2px; font-size: 11px; color: var(--tenue2);
+}
+.bloque-light .topes span { flex: 0 0 auto; }
+.bloque-light .topes span.puesto { color: var(--acento); font-weight: 600; }
+/* Los extremos pegados al borde: si no, la etiqueta del primero sobresale a la
+   izquierda del carril y la del último a la derecha. */
+.bloque-light .topes span:first-child { text-align: left; }
+.bloque-light .topes span:last-child { text-align: right; }
+.ritmo-linea {
+  margin-top: 9px; font-size: 13px; color: var(--texto);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- los iconos de las viñetas de una tarjeta */
+.galeria-estilos .vinetas li::before { content: none; }
+.galeria-estilos .vinetas li { display: flex; gap: 6px; align-items: baseline; }
+.galeria-estilos .vinetas .ico { flex: 0 0 auto; font-size: 11px; opacity: .85; }
+.galeria-estilos .vinetas li > :not(.ico) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- los intentos a medias
+ *
+ * Ni un error ni una tarjeta más: una caja aparte, en ámbar, que dice lo que
+ * hay y sus dos salidas. Va DEBAJO de la parrilla porque no es lo que vienes a
+ * ver; es lo que hay que resolver antes o después. */
+.sueltos {
+  margin-top: 20px; padding: 11px 13px;
+  background: var(--hueco); border: 1px solid var(--aviso-borde);
+  border-radius: 10px;
+}
+.sueltos > .fila { margin-top: 8px; gap: 8px; align-items: baseline; }
+.sueltos .crece { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- las muestras en fila, dentro del bloque de estilo gráfico
+ *
+ * EN FILA Y NO EN CUADRICULA. En 2x2 cada plano se ve a un cuarto de ancho y el
+ * subtítulo deja de leerse, que es justo lo que hay que juzgar. La cuadrícula se
+ * queda donde sirve: en la tarjeta de la galería, donde hace falta UNA imagen. */
+/* EN FILA, OCUPANDO EL ANCHO DE SU TARJETA.
+   Lo que se corrigio aqui fue el ALTO, no el ancho: en 2x2 la tira medía media
+   pantalla de alto y la ficha se convertia en una galeria de fotos. En fila el
+   alto es una fraccion del ancho, o sea que ocupar todo el ancho de la tarjeta
+   sigue dejando una tira baja. Con seis cada una cae a unos 150 px y el
+   subtitulo ya no se lee ahi: para eso esta la lupa, a un clic.
+
+   UNA SOLA TIRA. Debajo iba otra con las mismas seis, limpias; ahora la de
+   arriba YA son ellas, con su cartela puesta (ver `bannerMuestras`). */
+.banner-muestras .tira {
+  display: flex; gap: 4px; overflow: hidden; border-radius: 8px;
+  background: var(--lienzo); width: 100%;
+}
+.banner-muestras .tira img {
+  flex: 1 1 0; min-width: 0; height: auto; display: block; cursor: zoom-in;
+  aspect-ratio: 16 / 9; object-fit: cover;
+}
+/* La leyenda en UNA linea: partida en dos ocupaba mas que la tira que explica. */
+.pista.una-linea {
+  margin-top: 6px; max-width: none; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.resumen-voz { font-size: 13px; margin-bottom: 9px; }
+
+/* ---- el botón de escuchar, uno y el mismo en los dos sitios
+ *
+ * El <audio> no se ve NUNCA: la barra nativa del navegador traía su propio play
+ * al lado del nuestro —dos botones de play para una sola cosa— además de
+ * volumen, tiempo y menú de tres puntos, que no pintan nada en doce segundos de
+ * escucha. Sigue en el DOM porque es quien suena, y porque estando ahí lo
+ * alcanza `registrarReproductor`: arrancar una escucha para la que sonaba. */
+.escucha-voz { display: inline-flex; align-items: center; }
+.escucha-voz audio { display: none; }
+.escucha-voz .escuchar.solo-icono {
+  padding: 0; width: 24px; height: 24px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; font-size: 11px;
+}
+.escucha-voz .escuchar.sonando { border-color: var(--acento); color: var(--acento); }
+
+/* ---- la cuadrícula de voces
+ *
+ * VARIAS POR FILA Y CON SU PLAY. El <select> del navegador daba una voz por
+ * línea en una columna estrecha: con 417 voces inglesas, elegir era bajar por
+ * nombres que no dicen nada sin poder oír ninguna hasta haberla elegido. */
+.campo-voz { position: relative; }
+.desplegable-voz {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  padding: 7px 10px; border: 1px solid var(--linea); border-radius: 8px;
+  background: var(--hueco); color: var(--texto); cursor: pointer;
+}
+.desplegable-voz:hover { border-color: var(--acento); }
+.desplegable-voz.abierto { border-color: var(--acento); }
+.desplegable-voz .nombre { font-weight: 600; }
+.desplegable-voz .meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desplegable-voz .flecha { flex: 0 0 auto; font-size: 10px; color: var(--tenue); }
+
+.panel-voces {
+  margin-top: 6px; padding: 8px; border: 1px solid var(--linea);
+  border-radius: 8px; background: var(--hueco);
+}
+.panel-voces > .fila { margin: 0 0 8px; gap: 8px; align-items: center; }
+.buscar-voz { flex: 1; min-width: 140px; }
+/* Alto tope y rueda: 417 voces no caben en una pantalla, y que la ficha entera
+   crezca hasta ellas convierte la pantalla del estilo en un catálogo.
+   190px por celda son cuatro columnas en los 868 de la tarjeta, y con 360 de
+   alto entran seis filas: dos docenas de voces de un vistazo, cada una con su
+   idioma y su play, donde el <select> daba dieciocho nombres pelados. */
+.rejilla-voces {
+  display: grid; gap: 5px; max-height: 360px; overflow-y: auto;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.rejilla-voces .vacio { grid-column: 1 / -1; padding: 12px 4px; }
+.voz-ficha {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  padding: 5px 7px; border: 1px solid var(--linea); border-radius: 7px;
+  background: var(--lienzo);
+}
+.voz-ficha.sel { border-color: var(--acento); background: var(--marcado); }
+/* El nombre es un botón —elegir la voz— y el play es otro: dos gestos, dos
+   botones, y ninguna zona mágica dentro de uno solo. */
+.voz-ficha .elegir-voz {
+  flex: 1; min-width: 0; display: block; text-align: left; padding: 2px 0;
+  border: none; background: none; color: var(--texto); cursor: pointer;
+}
+.voz-ficha .elegir-voz .nombre,
+.voz-ficha .elegir-voz .meta {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.voz-ficha .elegir-voz .nombre { font-size: 13px; }
+.voz-ficha .elegir-voz .meta { font-size: 11px; }
+
+/* De dónde sale el estilo, en la ficha: separado de las muestras por una línea,
+   igual que la caja de «qué le cambiarías». Son dos gestos distintos sobre lo
+   mismo —cambiar la fuente y corregir lo que hay— y se ven como dos. */
+.fuente-estilo {
+  margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--linea-suave);
+}
+.fuente-estilo > .meta { display: block; margin-bottom: 8px; }
+.fuente-estilo .aportadas { margin-top: 9px; }
+
+/* La caja de «qué le cambiarías», separada de lo que corrige por una línea:
+   arriba se mira, abajo se pide. */
+.rehacer {
+  margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--linea-suave);
+}
+
+/* ==================================================== EL VÍDEO DEL MODO LIGHT
+ *
+ * Tres pantallas: el encargo (que reusa las cajas de crear un estilo), el guion
+ * y el vídeo. Lo único que trae estilo propio es lo que no existía: un guion
+ * que se lee y se corrige, un pie que persigue el scroll y un marco por el que
+ * van pasando los planos. */
+
+/* ---- el guion: un documento, no un formulario */
+
+.light-guion { max-width: 900px; padding-bottom: 76px; }
+
+.parrafo-guion {
+  border: 1px solid transparent; border-radius: 10px;
+  padding: 7px 11px 9px; margin-bottom: 4px;
+}
+.parrafo-guion:hover { border-color: var(--linea); background: var(--hueco); }
+.parrafo-guion.tocado { border-color: var(--acento-borde); }
+/* Un bloque de MENCIÓN se marca: es el único trozo del vídeo que no se dibuja
+   —debajo va metraje real del mapa—, así que quien lee el guion tiene que poder
+   saber cuál es sin ir a buscarlo. */
+.parrafo-guion > .cabecera {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px;
+  font-size: 11px; color: var(--tenue2);
+}
+.parrafo-guion > .cabecera .id { font-variant-numeric: tabular-nums; }
+.parrafo-guion > .cabecera button { visibility: hidden; }
+.parrafo-guion:hover > .cabecera button,
+.parrafo-guion > .cabecera button:focus { visibility: visible; }
+.parrafo-guion .pastilla.tocado { color: var(--acento); }
+
+/* El texto, en los dos estados. Mismo cuerpo y mismo interlineado en el área
+   editable y en el párrafo del karaoke: si no, al generar el audio el guion
+   entero salta de tamaño y parece otro texto. */
+.texto-bloque {
+  width: 100%; font-size: 15px; line-height: 1.62; color: var(--texto);
+  margin: 0;
+}
+textarea.texto-bloque {
+  background: transparent; border: none; padding: 0; resize: vertical;
+  font-family: inherit;
+}
+textarea.texto-bloque:focus { outline: none; }
+.texto-bloque.karaoke .palabra { cursor: pointer; color: var(--tenue); }
+.texto-bloque.karaoke .palabra.leida { color: var(--texto); }
+.texto-bloque.karaoke .palabra.sonando {
+  color: var(--acento); font-weight: 600;
+}
+
+.mandos-bloque {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea-suave);
+}
+.mandos-bloque .fila { margin-top: 7px; align-items: baseline; gap: 10px; }
+
+.prompt-general {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 11px;
+  padding: 11px 13px; margin-bottom: 14px;
+}
+.prompt-general .fila { margin-top: 8px; align-items: baseline; gap: 10px; }
+
+/* ---- el reproductor: barra propia y ×1..×5 */
+
+/* VIVE DENTRO DE LA BARRA DE ABAJO, no encima del guion.
+
+   Traia fondo, borde, redondeo, margen y `position: sticky`: era una tarjeta
+   flotante de cuando estaba arriba del texto. Metida en la franja del pie eso
+   la dibujaba como una caja dentro de otra caja, y ademas no crecia -- se
+   quedaba con su ancho de fabrica en medio de dos huecos --. Ahora es una fila
+   mas de la barra, y se lleva TODO lo que sobra entre los dos botones. */
+.reproductor-light {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1; min-width: 0;
+}
+/* `min-width: 0` para que pueda encoger: con un minimo en pixeles, una ventana
+   estrecha lo saca de la barra en vez de estrujarlo. */
+.reproductor-light audio { flex: 1; min-width: 0; height: 34px; }
+.reproductor-light .velocidad { flex: 0 0 auto; }
+
+/* ---- el pie: «Generar Audio» a la izquierda y la barra ocupando el resto
+ *
+ * SÍ persigue el scroll, y es lo contrario de `.pie-light` (el del formulario
+ * de crear un estilo, que va abajo del todo). Allí lo que hay es un formulario
+ * que se rellena de arriba abajo; aquí, un documento largo que se lee, y la
+ * acción es sobre lo que estás leyendo. Ver la cabecera de la sección en app.js. */
+/* LAS BARRAS DE ABAJO SON LA MISMA BARRA.
+   Hay una por pantalla --guion, diapositivas y video-- y las tres cuelgan del
+   panel, fuera del contenido (`BARRA_INFERIOR` en app.js). Comparten regla a
+   proposito: eran dos estilos parecidos, uno tarjeta flotante y otro franja, y
+   al cambiar de pantalla se notaba el salto. */
+.pie-guion, .previa-mandos {
+  position: sticky; z-index: 6;
+  bottom: calc(var(--alto-nav) + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 calc(var(--margen-panel) * -1);
+  padding: 9px var(--margen-panel);
+  background: var(--panel); border-top: 1px solid var(--linea);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .28);
+}
+.pie-guion .barra-light { flex: 1; min-width: 0; }
+.pie-guion > button, .pie-guion > .ayuda-de { flex: 0 0 auto; white-space: nowrap; }
+
+.barra-light { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.barra-light .carril {
+  height: 8px; border-radius: 4px; background: var(--lienzo);
+  border: 1px solid var(--linea); overflow: hidden;
+}
+.barra-light .relleno {
+  height: 100%; width: 0; background: var(--acento);
+  transition: width .25s linear;
+}
+.barra-light .meta {
+  font-size: 11px; color: var(--tenue2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- el vídeo: un rectángulo por el que van pasando los planos
+ *
+ * El MISMO marco durante la generación y al terminar, a propósito: lo que se
+ * mira mientras se genera y lo que se mira cuando está hecho son la misma cosa. */
+
+.light-video { max-width: 1000px; }
+.marco-video {
+  position: relative; aspect-ratio: 16 / 9; background: var(--lienzo);
+  border: 1px solid var(--linea); border-radius: 12px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.marco-video img, .marco-video video {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+}
+.marco-video .vacio { color: var(--tenue2); font-size: 13px; }
+.marco-video .sello {
+  position: absolute; left: 9px; bottom: 9px; padding: 2px 8px;
+  border-radius: 7px; font-size: 11px; color: var(--texto);
+  background: rgba(10, 11, 14, .72); border: 1px solid var(--linea);
+  font-variant-numeric: tabular-nums;
+}
+.tira-planos {
+  display: grid; gap: 4px; margin-top: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+}
+.tira-planos img {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block;
+  border-radius: 6px; background: var(--lienzo);
+}
+
+/* ---- el encargo: el material y la duración */
+
+.fuente-light {
+  border: 1px solid var(--linea); border-radius: 9px; padding: 8px 9px;
+  margin-bottom: 8px; background: var(--hueco);
+}
+.fuente-light .fila { margin-top: 6px; align-items: center; gap: 9px; }
+.fuente-light textarea { width: 100%; font-family: inherit; }
+input.duracion-num { width: 84px; flex: 0 0 auto; }
+.fila.cierre { align-items: baseline; gap: 13px; margin-top: 6px; }
+.fila.cierre .pista { max-width: 62ch; }
+button.primario.grande { padding: 9px 18px; font-size: 14px; }
+
+/* Los vídeos hechos con el modo light, debajo de los estilos. Una lista y no
+   una parrilla: lo que se busca aquí es EL que estabas haciendo, no elegir
+   entre varios mirándolos. */
+.videos-light { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.video-light {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--linea); border-radius: 9px; padding: 7px 11px;
+  background: var(--hueco);
+}
+.video-light .abrir {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px;
+  text-align: left; border: none; background: none; color: inherit;
+  font: inherit; cursor: pointer; padding: 0;
+}
+.video-light:hover { border-color: var(--acento); }
+.video-light .nombre { font-size: 14px; font-weight: 600; }
+
+/* EL LAPIZ. Cuadrado y del alto de la fila para que no la estire, y con el
+   emoji centrado: sin `line-height: 1` el glifo arrastra su propio interlineado
+   y la fila crece tres pixeles solo donde hay lapiz. */
+.video-light .renombrar {
+  flex: 0 0 auto; padding: 5px 9px; line-height: 1; font-size: 14px;
+}
+/* EN EL MOVIL SE TOCA CON EL PULGAR, no con un raton: 44 px es el minimo que
+   se acierta sin ampliar, y aqui el boton esta pegado a «Apartar», que borra. */
+@media (max-width: 560px) {
+  .video-light { gap: 6px; }
+  .video-light .renombrar { min-width: 44px; min-height: 40px; }
+}
+
+/* ---- volver, en la cabecera de una pantalla de dentro */
+
+/* VA DELANTE DEL TITULO Y EN SU LINEA. `.light-cab` alinea por `baseline`, que
+   es lo que hace que el «con «Monos»» se lea a la altura del h2; un boton
+   alineado asi cuelga, y por eso este se centra por su cuenta. */
+.light-cab .volver {
+  flex: 0 0 auto; align-self: center; padding: 4px 10px; font-size: 13px;
+}
+
+/* EN ESTRECHO EL PIE SE PARTE EN DOS LÍNEAS. Con los dos botones y la barra en
+   fila, a 375 px la barra se queda en 57 px y la línea que dice lo que va a
+   hacer y lo que cuesta —que es la mitad de por qué existe— no se puede leer.
+   Los botones arriba y la barra debajo, a todo el ancho. */
+@media (max-width: 560px) {
+  .pie-guion { flex-wrap: wrap; }
+  /* `.ayuda-de` tambien: desde que cada boton lleva su tooltip, el hijo
+     directo del pie es el envoltorio y no el boton. */
+  .pie-guion > button, .pie-guion > a, .pie-guion > .ayuda-de { flex: 1 1 auto; }
+  .pie-guion > .ayuda-de > button, .pie-guion > .ayuda-de > a { width: 100%; }
+  /* En estrecho, la barra y el reproductor se llevan su propia fila: entre dos
+     botones no queda ancho para nada mas. */
+  .pie-guion .barra-light,
+  .pie-guion .reproductor-light { flex: 1 0 100%; order: 2; }
+}
+
+/* ==========================================================================
+   EL REPASO: las notas escritas sobre el vídeo montado
+
+   VA DEBAJO DEL REPRODUCTOR Y SE LEE COMO UNA LISTA DE MOMENTOS. Cada tarjeta
+   abre por su minuto —que es un botón: pulsar salta ahí— porque lo que se está
+   repasando es el vídeo, no una lista de tareas: la referencia siempre es
+   «dónde pasa esto», nunca «cuál era el plano».
+
+   Y la caja de escribir aparece DONDE se escribe, no en un panel aparte: se
+   pausa, se pulsa, y el sitio donde teclear sale justo debajo. Un formulario en
+   otra parte de la pantalla obliga a volver a buscar el momento. */
+.repaso { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.repaso-cab { display: flex; align-items: baseline; gap: 10px; }
+.repaso-cab h3 { margin: 0; font-size: 15px; }
+
+.repaso-nueva {
+  border: 1px solid var(--acento); border-radius: 10px; padding: 11px;
+  background: var(--hueco); display: flex; flex-direction: column; gap: 8px;
+}
+.repaso-nueva textarea { width: 100%; }
+
+.repaso-notas { display: flex; flex-direction: column; gap: 6px; }
+.repaso-nota {
+  border: 1px solid var(--linea); border-radius: 9px; padding: 8px 11px;
+  background: var(--hueco); display: flex; flex-direction: column; gap: 6px;
+}
+/* Una nota YA APLICADA no se borra de la lista y tampoco compite con las que
+   quedan: se apaga. Borrarla perdería la historia de lo que se pidió, y dejarla
+   igual haría que «3 sin aplicar» no se distinguiera de un vistazo. */
+.repaso-nota.aplicada { opacity: .55; }
+
+/* SALVO LA QUE ACABA DE APLICARSE Y NADIE HA MIRADO. Esa no es historia
+   todavía: es trabajo hecho pendiente de que alguien diga si vale. Se queda
+   encendida y marcada en azul hasta que se pulsa su botón de ir al plano —el
+   gesto con el que se mira—, y entonces sí se apaga con las demás. */
+.repaso-nota.aplicada.sin-revisar { opacity: 1; }
+.repaso-nota.sin-revisar {
+  border-color: var(--acento-borde); background: var(--info-fondo);
+  box-shadow: inset 3px 0 0 var(--acento);
+}
+.repaso-nota.sin-revisar > .fila > button:first-child {
+  border-color: var(--acento); color: var(--acento); font-weight: 600;
+}
+.repaso-nota .sin-ver {
+  font-size: 11px; color: var(--acento); border: 1px solid var(--acento-borde);
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+}
+.repaso-nota .texto { font-size: 13px; line-height: 1.45; }
+.repaso-nota .tira-aportadas { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+.repaso-nota .tira-aportadas img {
+  width: 100%; aspect-ratio: 16 / 9; object-fit: cover;
+  border-radius: 6px; display: block;
+}
+
+/* ---------------------------------------- las cuentas del CLI, en orden
+ * Una tarjeta por cuenta y el orden A LA VISTA, porque el orden ES la regla:
+ * la de arriba se usa siempre y las de abajo entran cuando la de arriba falla.
+ * Un desplegable de «prioridad» diría lo mismo y se leería peor.
+ */
+.cli-cuenta {
+  border: 1px solid var(--linea-suave); border-radius: 10px;
+  padding: 8px 10px; margin-top: 8px; background: var(--boton);
+}
+.cli-cuenta.manda { border-color: var(--acento-borde); }
+.cli-cuenta .fila { gap: 8px; align-items: center; flex-wrap: wrap; }
+.cli-cuenta input[type="text"] { flex: 1; min-width: 140px; }
+.cli-orden { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.cli-puesto {
+  font-size: 11px; color: var(--tenue); min-width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+.cli-cuenta.manda .cli-puesto { color: var(--acento); }
+
+/* El paso a paso del acceso. Se despliega DENTRO de la tarjeta de su cuenta:
+   con dos accesos abiertos a la vez, un panel suelto no diría de cuál es. */
+.cli-acceso {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--linea-suave);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.cli-acceso.ok { border-top-color: var(--ok-borde); }
+.cli-acceso.mal { border-top-color: var(--malo-borde); }
+.cli-acceso textarea {
+  width: 100%; font-family: var(--mono, monospace); font-size: 12px;
+  resize: vertical;
+}
+.cli-enlace {
+  display: inline-block; padding: 7px 12px; border-radius: 8px;
+  border: 1px solid var(--acento-borde); color: var(--acento);
+  text-decoration: none; font-weight: 600; text-align: center;
+}
+.cli-enlace:hover { background: var(--acento-borde); }
+.meta.aviso { color: var(--aviso-texto); }
+
+/* ------------------------------------------------ el previsualizador
+ *
+ * Se mira en el ordenador Y en el móvil, y el móvil no es el caso raro: este
+ * vídeo se revisa desde el teléfono mientras el ordenador genera. Por eso el
+ * cuadro manda sobre todo lo demás y los mandos se apilan cuando no caben, en
+ * vez de encogerse hasta no poder darles. */
+
+.light-previa { display: flex; flex-direction: column; gap: 12px; }
+
+.previa-marco {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  background: #000; border: 1px solid var(--linea); border-radius: 12px;
+  overflow: hidden; touch-action: pan-y;
+}
+.previa-marco > img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+}
+/* EL FORMATO VERTICAL: el marco toma la proporción del vídeo y se centra; a
+   todo el ancho un 9:16 se saldría de cualquier pantalla. */
+.previa-marco.vertical, .marco-video.vertical {
+  aspect-ratio: 9 / 16; width: auto; max-height: 72vh; max-width: 100%;
+  margin-left: auto; margin-right: auto;
+}
+.previa-marco.vertical { height: 72vh; }
+/* en vertical el subtitulo va a un tercio desde abajo, como en el video */
+.previa-marco.vertical .previa-sub { bottom: 31%; }
+@media (max-height: 900px) {
+  .marco-video.vertical { aspect-ratio: 9 / 16; height: 60vh; width: auto; }
+}
+.tira-modos.formatos button { min-width: 150px; }
+.personaje-light .casillas { flex-wrap: wrap; gap: 14px; }
+.personaje-light .casillas label { display: inline-flex; align-items: center; gap: 6px; }
+
+/* las llamadas a la accion: una tarjeta por ranura, la apagada en gris */
+.cta-bloque { display: flex; flex-direction: column; gap: 10px; }
+.cta-ranura {
+  border: 1px solid var(--linea); border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.cta-ranura.apagada { opacity: .62; }
+.cta-ranura > label.plano { display: inline-flex; align-items: center; gap: 6px; }
+.cta-ranura .campo { margin-bottom: 0; }
+.cta-ranura .fila { align-items: baseline; gap: 8px; }
+.tira-personaje .hoja { margin: 0; max-width: 360px; }
+.tira-personaje .hoja img {
+  width: 100%; aspect-ratio: 3 / 2; object-fit: contain; display: block;
+  border-radius: 8px; background: var(--lienzo); cursor: zoom-in;
+}
+
+.previa-mandos button { min-height: 40px; }
+
+.previa-feedback { display: flex; flex-direction: column; gap: 8px; }
+.previa-nota {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 6px 10px; background: var(--hueco); border: 1px solid var(--linea);
+  border-radius: 8px; font-size: 13px;
+}
+/* el texto se lleva el hueco y los dos botones se quedan a la derecha, donde
+   el pulgar los encuentra sin buscarlos */
+.previa-nota .texto { flex: 1 1 auto; }
+.previa-nota button { flex: 0 0 auto; padding: 2px 8px; min-height: 0; }
+.previa-nota.editando { display: block; }
+.previa-nota.editando textarea { width: 100%; margin-bottom: 6px; }
+.previa-pista { font-style: italic; }
+
+/* EN EL MÓVIL, el cuadro pegado a los bordes y los mandos a lo ancho: un botón
+   de 40 px al que hay que apuntar con el pulgar mientras sujetas el teléfono es
+   la diferencia entre revisar doscientas escenas y dejarlo a la diez. */
+@media (max-width: 720px) {
+  .light-previa .light-cab h2 { font-size: 17px; }
+  .previa-marco { border-radius: 8px; }
+  .previa-mandos { gap: 8px; }
+  .previa-mandos button, .previa-mandos .ayuda-de { flex: 1 1 auto; }
+  .previa-mandos button { min-height: 46px; }
+  .previa-mandos .meta { flex: 1 0 100%; order: 3; }
+  .previa-mandos .crece { display: none; }
+}
+
+/* --------------------------------------------- la barra de abajo (light)
+   Los cinco pasos, fijos al pie del panel. Va pegada abajo porque esto se
+   repasa desde el movil y arriba no llega el pulgar; en escritorio se queda
+   igual a proposito, para que el sitio de navegar sea UNO y no cambie de
+   lugar segun la pantalla. */
+/* LA BARRA VA AL FONDO AUNQUE SOBRE SITIO.
+   `sticky` solo sujeta cuando hay scroll, asi que en una pantalla corta --la
+   galeria con dos estilos-- la barra se quedaba pegada al ultimo elemento y
+   con medio panel negro debajo. Con el panel en columna y `margin-top:auto`
+   baja al fondo cuando sobra sitio, y `sticky` sigue sujetandola cuando falta.
+   Va acotado a modo-light: el modo editor no lleva esta barra. */
+/* El relleno de abajo del panel se quita AQUI en vez de cancelarlo con un
+   margen negativo en la barra: un margen negativo sobre un elemento `sticky`
+   no le hace hueco, lo DESPLAZA -- la barra se pintaba 60px por debajo del
+   borde y el contenido se veia pasar por debajo de ella. */
+/* EL ALTO DE LA BARRA DE PASOS, EN UN SOLO SITIO. Lo usan las barras que se
+   anclan encima de ella; escrito a mano en cada una, la primera que cambie
+   deja a las otras tapadas o flotando. */
+:root { --alto-nav: 53px; }
+
+body.modo-light #panel {
+  display: flex; flex-direction: column; padding-bottom: 0;
+  /* NUNCA SCROLL HORIZONTAL. Las barras de abajo van de borde a borde con
+     margenes negativos que cancelan el relleno del panel; en cuanto aparece la
+     barra de scroll vertical, ese ancho ya no cuadra y se colaba una barra
+     horizontal por debajo de toda la pantalla. */
+  overflow-x: hidden;
+}
+/* Crece para empujar la barra al fondo, y deja un respiro para que la ultima
+   linea no quede pegada al borde de la barra al llegar abajo del todo. */
+/* EL `width: 100%` NO SOBRA. `.contenido` lleva `margin: 0 auto`, que en flujo
+   normal centra una columna que ya ocupa lo que puede; dentro de un contenedor
+   FLEX ese mismo `auto` significa otra cosa --absorbe el hueco libre-- y encoge
+   la columna al ancho de su CONTENIDO. Al poner el panel en columna para bajar
+   la barra al fondo se llevo por delante el ancho de toda la pantalla light, y
+   se notaba poco porque los textos largos ya la estiraban casi entera. */
+body.modo-light #panel > .contenido {
+  flex: 1 0 auto; padding-bottom: 14px; width: 100%;
+}
+
+.nav-light {
+  position: sticky; bottom: 0; z-index: 20;
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  background: var(--panel); border-top: 1px solid var(--linea);
+  /* `auto` arriba la empuja al fondo cuando sobra sitio; de borde a borde a los
+     lados, cancelando el relleno lateral del panel. Va TODO en la abreviada: el
+     `margin-top: auto` suelto que habia antes lo pisaba esta misma linea, asi
+     que el empujon al fondo no llegaba a aplicarse nunca. */
+  margin: auto calc(var(--margen-panel) * -1) 0;
+  /* el hueco del gesto de inicio en los moviles sin boton */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.nav-light .parada {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 4px 7px; background: none; border: none; border-radius: 0;
+  color: var(--tenue); cursor: pointer; min-height: 52px;
+}
+.nav-light .parada svg { width: 22px; height: 22px; display: block; }
+.nav-light .parada .etiqueta {
+  font-size: 11px; letter-spacing: .02em; line-height: 1;
+}
+.nav-light .parada:hover:not(:disabled):not(.activa) { color: var(--texto); }
+.nav-light .parada.activa { color: var(--acento); cursor: default; }
+/* Apagada pero LEGIBLE: dice que ese paso existe y todavia no toca. */
+/* Apagada pero LEGIBLE: con --punto-bloqueado (#262b34) sobre el panel casi
+   no se leia, y un paso que no se puede leer no ensena ningun camino. */
+.nav-light .parada:disabled { color: var(--punto-pendiente); cursor: not-allowed; }
+
+/* En movil la etiqueta cabe justa; el icono manda y el texto acompana. */
+@media (max-width: 420px) {
+  .nav-light .parada .etiqueta { font-size: 10px; }
+  .nav-light .parada { padding: 7px 2px 6px; }
+}
+
+/* --------------------------------------------------- la cuenta, en la barra
+   Quien esta dentro y como salir. Solo aparece si delante hay un login que
+   conteste /api/me: en local no lo hay y este bloque no pinta nada. */
+.cuenta {
+  display: flex; align-items: center; gap: 6px;
+  padding-left: 10px; margin-left: 2px;
+  border-left: 1px solid var(--linea);
+}
+.cuenta .nombre {
+  font-size: 12px; color: var(--tenue); white-space: nowrap;
+  max-width: 12ch; overflow: hidden; text-overflow: ellipsis;
+}
+/* En movil la barra va justa: se queda el boton de salir, que es el que se
+   pulsa; el nombre lo dice la pantalla de acceso al volver. */
+@media (max-width: 560px) { .cuenta .nombre { display: none; } }
+
+/* ------------------------------------------------------- la ayuda de un boton
+   Sale al pasar por encima, con retardo: sin el, cruzar la barra con el raton
+   enciende y apaga tres carteles seguidos. Con `visibility` ademas de opacidad
+   para que no se pueda seleccionar el texto de un cartel invisible.
+
+   TIENE QUE SALIR TAMBIEN EN LOS APAGADOS, que es donde mas falta hace: la
+   pregunta de un boton que no se deja pulsar es justo «por que no». Un boton
+   `disabled` no recibe eventos de raton, asi que el `:hover` se pone sobre un
+   envoltorio y no sobre el boton. */
+.ayuda-de {
+  position: relative; display: inline-flex;
+}
+.ayuda-de::after {
+  content: attr(data-ayuda);
+  position: absolute; bottom: calc(100% + 9px); left: 50%;
+  transform: translateX(-50%);
+  width: max-content; max-width: 330px;
+  background: var(--hueco); color: var(--texto);
+  border: 1px solid var(--acento-borde); border-radius: 9px;
+  padding: 9px 11px; font-size: 12px; line-height: 1.45;
+  white-space: normal; text-align: left; font-weight: 400;
+  opacity: 0; visibility: hidden; pointer-events: none; z-index: 60;
+  box-shadow: 0 12px 32px -14px rgba(0, 0, 0, .85);
+  transition: opacity .12s ease, visibility .12s;
+}
+.ayuda-de:hover::after, .ayuda-de:focus-within::after {
+  opacity: 1; visibility: visible; transition-delay: .45s;
+}
+/* Cerca del borde izquierdo el cartel se salia por fuera del panel. */
+.pie-guion > .ayuda-de:first-child::after { left: 0; transform: none; }
+
+/* ------------------------------------------ los mandos de una diapositiva
+   Anclada al fondo, justo encima de la barra de pasos, con «anterior» a la
+   izquierda del todo y «siguiente» a la derecha del todo: los dos gestos que
+   se repiten doscientas veces, en los dos sitios donde cae el pulgar.
+
+   Va la ULTIMA del flujo (ver `vistaPreviaLight`), asi que no tapa nada:
+   detras no hay contenido que pueda quedar debajo. */
+
+/* los dos extremos, pegados a los bordes */
+.previa-mandos > button:first-child { margin-right: 2px; }
+.previa-mandos > button:last-child { margin-left: 2px; }
+
+/* UN BOTON QUE PIDE ATENCION SIN COMPETIR POR EL PRIMARIO.
+   En la barra de las diapositivas habia dos botones de acento --«Siguiente» y
+   «Aplicar»-- y en el movil se ven como dos llamadas del mismo peso. Primario
+   hay UNO por barra, y aqui es «Siguiente»: es el gesto que se repite
+   doscientas veces. «Aplicar» lleva el amarillo del aviso, que en esta
+   interfaz ya significa «hay algo pendiente» (la pastilla de obsoleto). */
+button.avisa {
+  background: var(--aviso-fondo); color: var(--aviso-texto);
+  border-color: var(--aviso-borde); font-weight: 600;
+}
+button.avisa:hover:not(:disabled) { border-color: var(--aviso); }
+
+/* EL REPRODUCTOR CABE EN PANTALLA BAJA.
+   Con la proporcion sola, en un portatil se comia el alto entero y el repaso
+   quedaba debajo del pliegue: para leer una nota habia que hacer scroll y
+   perder el video de vista. Aqui se suelta la proporcion y se fija el alto --el
+   `object-fit: contain` del video ya lo encaja dentro--, y solo cuando la
+   pantalla es baja: en una alta no hace falta y el video se ve mas grande. */
+@media (max-height: 900px) {
+  .marco-video { aspect-ratio: auto; height: 48vh; width: 100%; }
+}
+
+/* las voces propias (clonadas), aparte del catalogo */
+.grupo-voces {
+  grid-column: 1 / -1; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tenue2); padding: 8px 4px 2px; border-bottom: 1px solid var(--linea);
+}
+.voz .nativa.propia { background: var(--acento, #c9a35a); color: #111; }
+
+/* LA CAJA DE LO QUE SE REFRESCA SOLO (`enVivo` en app.js): la barra de
+   progreso y la pastilla del coste se vuelven a pintar cada medio segundo sin
+   tocar el resto de la pantalla. `display: contents` la borra de la
+   maquetación, así que lo de dentro sigue siendo hijo directo de su fila y
+   nada se mueve de sitio por llevar envoltorio. */
+.vivo { display: contents; }
+
+/* ------------------------------------------------------------ la guía de inicio
+   Las tarjetas de la primera vez (abrirInicio, en app.js): un velo y un cuadro
+   centrado, como los demás modales; en móvil a pantalla completa. */
+#inicio {
+  position: fixed; inset: 0; z-index: 80; background: var(--velo);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; overflow-y: auto;
+}
+#inicio .cuadro {
+  width: min(600px, 100%); max-height: 100%; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+  box-shadow: var(--sombra); padding: 18px 22px 20px;
+}
+.inicio-cab { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inicio-cab .paso-de {
+  color: var(--tenue); font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+}
+.inicio-puntos { display: flex; gap: 6px; align-items: center; }
+.inicio-puntos span {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--punto-pendiente);
+}
+.inicio-puntos span.hecho { background: var(--ok); }
+.inicio-puntos span.actual { background: var(--acento); }
+.inicio-cuerpo h2 { font-size: 20px; margin: 12px 0 8px; }
+.inicio-cuerpo h3 { font-size: 14px; margin: 14px 0 2px; }
+.inicio-cuerpo .pista { font-size: 13px; margin-top: 0; }
+.inicio-cuerpo .caja-info, .inicio-cuerpo .caja-aviso { margin-top: 12px; }
+.inicio-cuerpo .bloque-config { margin: 10px 0; }
+.inicio-pasos { margin: 12px 0 6px; padding-left: 22px; font-size: 13px; }
+.inicio-pasos li { margin-bottom: 8px; }
+.inicio-pasos a { word-break: break-all; }
+.inicio-hecho { display: flex; align-items: center; gap: 9px; margin: 10px 0 4px; font-size: 13px; }
+.inicio-pie {
+  display: flex; gap: 8px; align-items: center; margin-top: 18px;
+  border-top: 1px solid var(--linea-suave); padding-top: 12px;
+}
+@media (max-width: 620px) {
+  #inicio { padding: 0; }
+  #inicio .cuadro {
+    width: 100%; height: 100%; max-height: none; border-radius: 0; border: none;
+    padding: calc(14px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------------------------------------------------------------- el asistente
+   La burbuja va ENCIMA de la barra de abajo (--alto-nav), no en la esquina:
+   en un móvil la esquina es la cuarta parada de esa barra, y una burbuja ahí
+   tapa el botón del vídeo. Y ENCIMA de la franja de mandos de cada pantalla
+   (.pie-guion / .previa-mandos, ~60px pegada a la barra): en el vídeo su
+   «Descargar» queda en la esquina y la burbuja se lo comía. El aviso de arriba
+   (#toast) queda por debajo de la burbuja y no se pisan. */
+:root { --alto-pie: 62px; }
+.burbuja-asistente {
+  position: fixed; right: 18px; z-index: 65;
+  bottom: calc(var(--alto-nav) + var(--alto-pie) + 14px + env(safe-area-inset-bottom, 0px));
+  width: 52px; height: 52px; border-radius: 50%; padding: 0;
+  background: var(--acento); color: var(--sobre-acento); border: none;
+  box-shadow: var(--sombra); display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.burbuja-asistente svg { width: 26px; height: 26px; display: block; }
+.burbuja-asistente:hover:not(:disabled) { filter: brightness(1.12); border: none; }
+/* el punto de estado: verde con sesión, rojo sin ella, ámbar si hay una
+   respuesta sin leer; late mientras piensa */
+.burbuja-asistente::after {
+  content: ''; position: absolute; top: 1px; right: 1px; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--ok); border: 2px solid var(--panel);
+}
+.burbuja-asistente.sin-sesion::after { background: var(--malo); }
+.burbuja-asistente.aviso::after { background: var(--aviso); }
+.burbuja-asistente.pensando::after { background: var(--acento2); animation: late-burbuja 1.1s ease-in-out infinite; }
+@keyframes late-burbuja {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: .55; }
+}
+
+#asistente {
+  position: fixed; z-index: 66; right: 18px;
+  bottom: calc(var(--alto-nav) + var(--alto-pie) + 78px + env(safe-area-inset-bottom, 0px));
+  width: min(430px, calc(100vw - 24px));
+  height: min(620px, calc(100vh - var(--alto) - var(--alto-nav) - var(--alto-pie) - 100px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+  box-shadow: var(--sombra);
+}
+#asistente.plegado { display: none; }
+#asistente-cuerpo {
+  flex: 1; overflow-y: auto; padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+#asistente-pie {
+  border-top: 1px solid var(--linea); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#asistente-pie textarea { resize: none; }
+/* Parar a la izquierda, Enviar a la derecha, en una sola linea tambien en
+   movil: la .fila generica se apila en pantalla estrecha y dejaba el boton
+   de enviar suelto a la izquierda. */
+.asistente-mandos { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+/* Parar se queda a la izquierda por su cuenta: en movil el .crece de la
+   cabecera se anula y no se puede contar con el para separar */
+.asistente-mandos #btn-cancelar-asistente { margin-right: auto; }
+/* la cabecera no se parte: la pastilla con el correo cede y se recorta */
+#asistente .lateral-cab { flex-wrap: nowrap; }
+#asistente-estado { min-width: 0; overflow: hidden; display: flex; }
+#asistente-estado .pastilla { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.turno {
+  max-width: 92%; padding: 8px 11px; border-radius: 12px;
+  font-size: 13px; line-height: 1.5; word-break: break-word;
+}
+.turno.tu {
+  align-self: flex-end; background: var(--marcado); border: 1px solid var(--acento-borde);
+  white-space: pre-wrap;
+}
+.turno.asistente { align-self: flex-start; background: var(--hueco); border: 1px solid var(--linea); }
+.turno.asistente.pensando { color: var(--tenue); font-style: italic; }
+.turno.asistente.cancelado { color: var(--tenue); }
+.turno.asistente.error { padding: 0; border: none; background: none; max-width: 100%; }
+.turno .md p { margin: 0 0 8px; }
+.turno .md p:last-child, .turno .md ul:last-child, .turno .md ol:last-child { margin-bottom: 0; }
+.turno .md ul, .turno .md ol { margin: 0 0 8px; padding-left: 20px; }
+.turno .md li { margin-bottom: 3px; }
+.turno .md pre {
+  background: var(--volcado-fondo); border: 1px solid var(--linea); border-radius: 7px;
+  padding: 8px 10px; overflow-x: auto; font-size: 12px; margin: 0 0 8px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.turno .md code {
+  font-family: var(--mono, monospace); font-size: 12px;
+  background: var(--boton); padding: 0 4px; border-radius: 4px;
+}
+.turno .md .titulo { font-weight: 600; margin: 6px 0 4px; }
+.turno .pie-turno { margin-top: 5px; color: var(--tenue2); font-size: 11px; }
+.asistente-vacio { color: var(--tenue); font-size: 13px; padding: 4px 2px; }
+.asistente-vacio .ejemplo {
+  display: block; width: 100%; text-align: left; margin-top: 6px;
+  white-space: normal; color: var(--texto);
+}
+.asistente-puerta { display: flex; flex-direction: column; gap: 8px; }
+
+@media (max-width: 620px) {
+  #asistente {
+    top: 0; right: 0; bottom: 0; left: 0; width: auto; height: auto;
+    border-radius: 0; border: none; padding-top: env(safe-area-inset-top);
+  }
+  #asistente-pie { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .burbuja-asistente {
+    right: 12px; width: 48px; height: 48px;
+    bottom: calc(var(--alto-nav) + var(--alto-pie) + 10px + env(safe-area-inset-bottom, 0px));
+  }
+  .burbuja-asistente.abierta { display: none; }
+}
+
+/* el enlace de acceso en la guía, como botón grande: es el primer gesto */
+.cli-enlace.grande {
+  display: block; text-align: center; padding: 12px 14px; border-radius: 9px;
+  background: var(--acento); color: var(--sobre-acento); font-weight: 600;
+  text-decoration: none; margin: 8px 0;
+}
+.cli-enlace.grande:hover { filter: brightness(1.1); }
+/* una clave probada contra su servicio: nombre, veredicto y motivo */
+.prueba-clave { border-top: 1px solid var(--linea-suave); padding: 8px 0 4px; }
+.prueba-clave .meta { margin-top: 2px; }
+
+/* las referencias adjuntas a una nota de una imagen, en pequeño y al lado */
+.nota-adjuntas { display: inline-flex; gap: 4px; align-items: center; }
+.nota-adjuntas img {
+  width: 36px; height: 24px; object-fit: cover; border-radius: 4px;
+  border: 1px solid var(--linea); cursor: zoom-in;
+}
+.previa-feedback .aportadas { margin: 6px 0 8px; }
+.previa-feedback .zona-suelta { padding: 9px 11px; font-size: 12px; }

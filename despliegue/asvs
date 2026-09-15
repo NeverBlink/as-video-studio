@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+#  asvs — el mando de AS Video Studio en el servidor.
+#
+#  Existe para que, cuando algo va raro, la respuesta a «¿que hago?» sea una
+#  palabra y no un parrafo de comandos de systemd.
+#
+#      asvs estado       como esta todo (esto es lo que hay que mandar si pides ayuda)
+#      asvs registro     que ha dicho el estudio ultimamente
+#      asvs reiniciar    apagar y encender
+#      asvs actualizar   traer la ultima version (sin tocar tus videos)
+#      asvs clave        ver o cambiar la contrasena de acceso
+#      asvs https        (re)intentar el certificado
+# -----------------------------------------------------------------------------
+set -euo pipefail
+
+RAIZ="${ASVS_RAIZ:-/opt/as-video-studio}"
+REPO="${ASVS_REPO:-NeverBlink/as-video-studio}"
+RAMA="${ASVS_RAMA:-main}"
+USUARIO="${ASVS_USUARIO:-studio}"
+
+if [ -t 1 ]; then N=$'\033[0m'; B=$'\033[1m'; VERDE=$'\033[32m'; ROJO=$'\033[31m'; GRIS=$'\033[90m'
+else N=""; B=""; VERDE=""; ROJO=""; GRIS=""; fi
+
+si() { printf '  %s✓%s %s\n' "$VERDE" "$N" "$*"; }
+no() { printf '  %s✗%s %s\n' "$ROJO" "$N" "$*"; }
+
+[ "$(id -u)" -eq 0 ] || { echo "Hay que ser root."; exit 1; }
+
+_puerto() { sed -n 's/^PUERTO=//p' "$RAIZ/datos/entorno" 2>/dev/null | head -1; }
+_dominio() { sed -n 's|^APP_URL=https\?://||p' "$RAIZ/login/.env" 2>/dev/null | head -1; }
+
+estado() {
+  local puerto dominio codigo
+  puerto="$(_puerto)"; dominio="$(_dominio)"
+
+  printf '\n%s  AS Video Studio%s   %s%s%s\n\n' "$B" "$N" "$GRIS" "$dominio" "$N"
+
+  systemctl is-active --quiet as-video-studio && si "el estudio esta en marcha" || no "el estudio esta PARADO"
+  systemctl is-active --quiet as-video-login  && si "el acceso esta en marcha"  || no "el acceso esta PARADO"
+  systemctl is-active --quiet nginx           && si "el servidor web esta en marcha" || no "el servidor web esta PARADO"
+
+  curl -fsS --max-time 5 "http://127.0.0.1:${puerto:-8110}/api/salud" >/dev/null 2>&1 \
+    && si "el estudio contesta" || no "el estudio no contesta por dentro"
+
+  codigo="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -k "https://$dominio/login" 2>/dev/null || true)"
+  [ "$codigo" = "200" ] && si "la pantalla de acceso se ve desde fuera" || no "la pantalla de acceso contesta $codigo"
+
+  printf '\n%s  lo que hace falta para generar%s\n' "$B" "$N"
+  command -v ffmpeg >/dev/null && si "ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}')" || no "falta ffmpeg"
+  [ -x /usr/local/bin/estudio-edge ] && si "navegador: $(/usr/local/bin/estudio-edge --version 2>/dev/null | head -1)" || no "falta el navegador"
+  command -v claude >/dev/null && si "CLI de Claude $(claude --version 2>/dev/null | head -1)" || no "falta el CLI de Claude"
+
+  # La comprobacion que no es obvia: que el fichero con el que se MIDE el texto
+  # sea el mismo con el que se DIBUJA. Si se separan, los rotulos se salen de su
+  # caja y no lo dice ningun error.
+  local mide dibuja
+  mide="$(readlink -f /usr/local/share/fonts/estudio/verdana.ttf 2>/dev/null || true)"
+  dibuja="$(readlink -f "$(fc-match Verdana -f '%{file}' 2>/dev/null)" 2>/dev/null || true)"
+  [ -n "$mide" ] && [ "$mide" = "$dibuja" ] \
+    && si "fuentes: mide y dibuja $(basename "$mide")" \
+    || no "fuentes descuadradas: mide $(basename "${mide:-nada}") y dibuja $(basename "${dibuja:-nada}")"
+
+  printf '\n%s  espacio y datos%s\n' "$B" "$N"
+  printf '  %s· %s libres en disco%s\n' "$GRIS" "$(df -h --output=avail "$RAIZ" 2>/dev/null | tail -1 | tr -d ' ')" "$N"
+  printf '  %s· %s videos, %s ocupados%s\n' "$GRIS" \
+    "$(find "$RAIZ/datos/proyectos" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)" \
+    "$(du -sh "$RAIZ/datos" 2>/dev/null | cut -f1)" "$N"
+  printf '\n'
+}
+
+registro() {
+  journalctl -u as-video-studio -u as-video-login -n "${1:-60}" --no-pager
+}
+
+reiniciar() {
+  systemctl restart as-video-login as-video-studio
+  sleep 2
+  estado
+}
+
+actualizar() {
+  local temporal
+  temporal="$(mktemp -d)"
+  echo "Bajando la ultima version de $REPO ($RAMA)..."
+  curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$RAMA" -o "$temporal/c.tgz"
+  tar -xzf "$temporal/c.tgz" -C "$temporal" --strip-components=1
+  [ -f "$temporal/app.py" ] || { echo "lo bajado no es el estudio"; rm -rf "$temporal"; exit 1; }
+
+  # Se para antes de tocar nada: cambiar el codigo por debajo de una tanda que
+  # esta corriendo es la forma mas rapida de perderla.
+  systemctl stop as-video-studio
+  rsync -a --delete --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='cache/' --exclude='proyectos/' --exclude='banco/' --exclude='secretos/' \
+    "$temporal/" "$RAIZ/app/"
+  rsync -a --delete --exclude='node_modules' --exclude='datos' --exclude='.env' \
+    "$RAIZ/app/despliegue/login/" "$RAIZ/login/"
+  ( cd "$RAIZ/login" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 ) || true
+  "$RAIZ/venv/bin/pip" install --quiet -r "$RAIZ/app/requirements.txt"
+  install -m 755 "$RAIZ/app/despliegue/asvs" /usr/local/bin/asvs
+  install -m 755 "$RAIZ/app/despliegue/estudio-clave" /usr/local/bin/estudio-clave
+  chown -R "$USUARIO:$USUARIO" "$RAIZ/app" "$RAIZ/login"
+  rm -rf "$temporal"
+
+  systemctl restart as-video-login as-video-studio
+  sleep 2
+  echo
+  estado
+}
+
+https() {
+  local dominio correo=(--register-unsafely-without-email)
+  dominio="$(_dominio)"
+  [ -n "${ASVS_CORREO:-}" ] && correo=(-m "$ASVS_CORREO")
+  certbot --nginx -d "$dominio" --non-interactive --agree-tos --redirect \
+    --keep-until-expiring "${correo[@]}"
+  # Con certificado, la cookie de sesion vuelve a ser segura.
+  sed -i 's|^SECURE_COOKIES=.*|SECURE_COOKIES=true|; s|^APP_URL=http://|APP_URL=https://|; s|^APP_ORIGENES=http://|APP_ORIGENES=https://|' \
+    "$RAIZ/login/.env"
+  systemctl restart as-video-login
+  systemctl reload nginx
+  echo "Listo: https://$dominio"
+}
+
+case "${1:-estado}" in
+  estado|"")   estado ;;
+  registro)    registro "${2:-60}" ;;
+  reiniciar)   reiniciar ;;
+  actualizar)  actualizar ;;
+  clave)       shift; estudio-clave "$@" ;;
+  https)       https ;;
+  -h|--help|ayuda) sed -n '5,13p' "$0" | sed 's/^#  \{0,1\}//' ;;
+  *) echo "No entiendo «$1». Prueba:  asvs ayuda"; exit 1 ;;
+esac

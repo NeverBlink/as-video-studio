@@ -1,0 +1,21 @@
+{
+  "name": "studio-videos-ia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Studio Videos IA - autenticacion y panel inicial",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "user": "node bin/user.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "better-sqlite3-session-store": "^0.1.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "helmet": "^8.1.0"
+  }
+}

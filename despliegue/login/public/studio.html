@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <title>Studio Videos IA</title>
+  <link rel="stylesheet" href="/css/styles.css?v=9">
+  <link rel="stylesheet" href="/css/studio.css?v=9">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/studio">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M9 7.5l8 4.5-8 4.5z" fill="#e0bb78"/></svg>
+      </span>
+      <span class="brand__text">Studio <em>Videos IA</em></span>
+    </a>
+
+    <div class="topbar__right">
+      <div class="userchip">
+        <span class="userchip__avatar" id="avatar" aria-hidden="true">&middot;</span>
+        <span class="userchip__name" id="userName">&hellip;</span>
+      </div>
+      <button class="btn btn--ghost" type="button" id="logout">Cerrar sesi&oacute;n</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <span class="eyebrow hero__eyebrow">Studio privado</span>
+      <h1 class="hero__title">
+        Bienvenido a tu <span class="accent">Studio</span> de v&iacute;deos generados con IA
+      </h1>
+      <p class="hero__lead">
+        Este es el punto de partida. A partir de aqu&iacute; se ir&aacute;n conectando los m&oacute;dulos de
+        guion, generaci&oacute;n, voz y montaje para llevar una idea hasta el v&iacute;deo final sin
+        salir de esta pantalla.
+      </p>
+
+      <div class="hero__meta">
+        <span><span class="dot" aria-hidden="true"></span>Todo operativo</span>
+        <span>Sesi&oacute;n iniciada: <b id="loginTime">&mdash;</b></span>
+        <span>&Uacute;ltimo acceso: <b id="lastLogin">&mdash;</b></span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section__head">
+        <h2>M&oacute;dulos</h2>
+        <span class="section__note">Se ir&aacute;n activando por fases</span>
+      </div>
+
+      <div class="grid">
+        <article class="tile">
+          <div class="tile__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>
+            </svg>
+          </div>
+          <h3 class="tile__title">Guion</h3>
+          <p class="tile__text">De la idea al guion estructurado, con gancho, desarrollo y cierre listos para grabar.</p>
+          <span class="badge">Pr&oacute;ximamente</span>
+        </article>
+
+        <article class="tile">
+          <div class="tile__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h12v12H3z"/><path d="M15 10l6-3.5v11L15 14z"/>
+            </svg>
+          </div>
+          <h3 class="tile__title">Generaci&oacute;n de v&iacute;deo</h3>
+          <p class="tile__text">Lanza los planos a los modelos de v&iacute;deo y revisa las tomas dentro del studio.</p>
+          <span class="badge">Pr&oacute;ximamente</span>
+        </article>
+
+        <article class="tile">
+          <div class="tile__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 4v10"/><path d="M9 7a3 3 0 016 0v5a3 3 0 01-6 0z"/>
+              <path d="M5 12a7 7 0 0014 0"/><path d="M12 19v2"/>
+            </svg>
+          </div>
+          <h3 class="tile__title">Voz y locuci&oacute;n</h3>
+          <p class="tile__text">Locuci&oacute;n sint&eacute;tica sobre el guion, con control de tono, ritmo y pausas.</p>
+          <span class="badge">Pr&oacute;ximamente</span>
+        </article>
+
+        <article class="tile">
+          <div class="tile__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 8h18v11H3z"/><path d="M3 8l3-4h12l3 4"/><path d="M9 12l5 2.5-5 2.5z"/>
+            </svg>
+          </div>
+          <h3 class="tile__title">Montaje</h3>
+          <p class="tile__text">Ensambla planos, voz y m&uacute;sica en una l&iacute;nea de tiempo y exporta el m&aacute;ster.</p>
+          <span class="badge">Pr&oacute;ximamente</span>
+        </article>
+
+        <article class="tile">
+          <div class="tile__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19V9m5 10V5m5 14v-7m5 7V8"/>
+            </svg>
+          </div>
+          <h3 class="tile__title">Biblioteca</h3>
+          <p class="tile__text">Todos los proyectos, versiones y descargas reunidos en un mismo sitio.</p>
+          <span class="badge">Pr&oacute;ximamente</span>
+        </article>
+
+        <article class="tile">
+          <div class="tile__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M20.2 14.4a1.7 1.7 0 00.4 1.9 2 2 0 11-2.8 2.8 1.7 1.7 0 00-2.9 1.2 2 2 0 11-4 0 1.7 1.7 0 00-2.9-1.2 2 2 0 11-2.8-2.8 1.7 1.7 0 00-1.2-2.9 2 2 0 110-4 1.7 1.7 0 001.2-2.9 2 2 0 112.8-2.8 1.7 1.7 0 002.9-1.2 2 2 0 114 0 1.7 1.7 0 002.9 1.2 2 2 0 112.8 2.8 1.7 1.7 0 001.2 2.9 2 2 0 110 4 1.7 1.7 0 00-1.6 1z"/>
+            </svg>
+          </div>
+          <h3 class="tile__title">Ajustes</h3>
+          <p class="tile__text">Claves de API, usuarios del studio y preferencias de marca.</p>
+          <span class="badge">Pr&oacute;ximamente</span>
+        </article>
+      </div>
+    </section>
+
+    <footer class="footer">
+      Studio Videos IA &middot; acceso privado &middot; v0.1.0
+    </footer>
+  </main>
+
+  <script src="/js/studio.js?v=9"></script>
+</body>
+</html>

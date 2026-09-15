@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+#  estudio-clave — la contraseña de acceso al Estudio, desde la consola del
+#  servidor. Se instala en /usr/local/bin (lo hace instalar.sh).
+#
+#    estudio-clave                    enseña la(s) contraseña(s) guardada(s)
+#    estudio-clave --nueva [cuenta]   pide una contraseña nueva (Intro: la
+#                                     genera) y la deja puesta y guardada
+#
+#  ES LA RECUPERACIÓN. El login no pide usuario y la única llave es la
+#  contraseña; si se pierde, la copia está aquí: en /root/estudio/, que solo
+#  root puede leer. A root se llega por la consola web del panel de Hostinger
+#  (o por SSH), y quien tiene el panel puede además restablecer la contraseña
+#  root desde ahí. O sea: tener el panel es tener la llave, y nadie más la tiene.
+#
+#  La copia en claro NO la escribe la aplicación: el proceso de Node corre como
+#  `studio`, sin privilegios y sin poder escribir fuera de su carpeta de datos.
+#  La escribe este script, como root, después de poner el hash en la base de
+#  datos con `bin/user.js poner` (que corre como `studio`, igual que la app).
+#  La contraseña viaja por la entrada estándar, no por argumentos: un argumento
+#  se ve en la lista de procesos mientras dura el comando.
+# -----------------------------------------------------------------------------
+set -euo pipefail
+
+APP="${ESTUDIO_LOGIN_APP:-/opt/as-video-studio/login}"
+CARPETA="${ESTUDIO_CLAVES:-/root/estudio}"
+ALFABETO='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#%+=?'
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Hay que ser root: en la consola, entra con el usuario root."
+  exit 1
+fi
+umask 077
+mkdir -p "$CARPETA"
+chmod 700 "$CARPETA"
+
+# Las cuentas con copia guardada: /root/estudio/clave-<cuenta>.txt
+cuentas_guardadas() {
+  local f
+  for f in "$CARPETA"/clave-*.txt; do
+    [ -e "$f" ] || continue
+    f="${f##*/clave-}"
+    echo "${f%.txt}"
+  done
+}
+
+generar() {
+  # Mismo alfabeto que bin/user.js (sin 0/O ni 1/l/I, para poder dictarla).
+  LC_ALL=C tr -dc "$ALFABETO" </dev/urandom | head -c 24
+}
+
+mostrar() {
+  local hay=0 c
+  for c in $(cuentas_guardadas); do
+    hay=1
+    echo
+    echo "  Cuenta     : $c"
+    echo "  Contraseña : $(cat "$CARPETA/clave-$c.txt")"
+  done
+  if [ "$hay" -eq 0 ]; then
+    echo "No hay ninguna contraseña guardada."
+    echo "Ponla con:  estudio-clave --nueva <cuenta>"
+    exit 1
+  fi
+  echo
+  echo "Con ella se entra en el Estudio. Para cambiarla: estudio-clave --nueva"
+}
+
+nueva() {
+  local cuenta="${1:-}" lista pw=""
+  if [ -z "$cuenta" ]; then
+    lista=($(cuentas_guardadas))
+    if [ "${#lista[@]}" -eq 1 ]; then
+      cuenta="${lista[0]}"
+    else
+      echo "Di de qué cuenta:  estudio-clave --nueva <cuenta>"
+      [ "${#lista[@]}" -gt 0 ] && echo "Guardadas: ${lista[*]}"
+      exit 1
+    fi
+  fi
+  if [ ! -f "$APP/.env" ]; then
+    echo "No encuentro la aplicación del login en $APP (falta .env)."
+    exit 1
+  fi
+
+  # Con alguien delante se pregunta; Intro genera una. Sin terminal (un
+  # despliegue automático) se genera sin preguntar.
+  if [ -t 0 ]; then
+    read -rsp "Contraseña nueva para «$cuenta» (Intro para generar una): " pw
+    echo
+    if [ -n "$pw" ] && [ "${#pw}" -lt 12 ]; then
+      echo "Mínimo 12 caracteres. No se ha cambiado nada."
+      exit 1
+    fi
+  fi
+  [ -n "$pw" ] || pw="$(generar)"
+
+  # El hash, a la base de datos, con el mismo usuario y el mismo .env que la app.
+  (
+    cd "$APP"
+    set -a; . ./.env; set +a
+    printf '%s\n' "$pw" | sudo -u studio -E node bin/user.js poner "$cuenta" --password-stdin >/dev/null
+  )
+  # Y la copia, para poder volver a leerla desde aquí.
+  printf '%s\n' "$pw" > "$CARPETA/clave-$cuenta.txt"
+  chmod 600 "$CARPETA/clave-$cuenta.txt"
+  echo
+  echo "  Cuenta     : $cuenta"
+  echo "  Contraseña : $pw"
+  echo
+  echo "Ya vale para entrar en el Estudio. Esta copia queda en $CARPETA/clave-$cuenta.txt"
+}
+
+case "${1:-}" in
+  "")                mostrar ;;
+  --nueva|nueva)     nueva "${2:-}" ;;
+  -h|--help|help)
+    sed -n '3,9p' "$0" | sed 's/^#  \{0,1\}//'
+    ;;
+  *)
+    echo "No entiendo «$1». Uso: estudio-clave | estudio-clave --nueva [cuenta]"
+    exit 1
+    ;;
+esac

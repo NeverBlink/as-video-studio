@@ -1,0 +1,163 @@
+/* Studio Videos IA — panel principal */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 28px;
+  background: rgba(9, 9, 11, 0.88);
+  border-bottom: 1px solid var(--border);
+  /* Sin backdrop-filter: sobre un elemento sticky provoca artefactos de
+     repintado al hacer scroll. El fondo casi opaco cumple igual. */
+}
+
+.topbar__right { display: flex; align-items: center; gap: 12px; }
+
+.userchip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 13px 6px 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.userchip__avatar {
+  width: 27px; height: 27px;
+  flex: 0 0 27px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #1a1508;
+  background: linear-gradient(140deg, var(--gold-hi), var(--gold));
+}
+.userchip__name { font-size: 0.84rem; font-weight: 500; color: var(--text-dim); }
+
+/* --- Contenido ------------------------------------------------------------ */
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+
+.hero {
+  padding: 76px 0 52px;
+  animation: heroIn 0.6s var(--ease) both;
+}
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero__eyebrow { display: block; margin-bottom: 18px; }
+.hero__title { max-width: 15ch; margin-bottom: 22px; }
+.hero__title .accent {
+  background: linear-gradient(100deg, var(--gold-hi), var(--gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-style: italic;
+}
+.hero__lead {
+  max-width: 56ch;
+  font-size: 1.03rem;
+  line-height: 1.65;
+  color: var(--text-dim);
+}
+
+.hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 0.83rem;
+  color: var(--text-muted);
+}
+.hero__meta b { font-weight: 500; color: var(--text-dim); }
+
+.dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(125, 219, 164, 0.16);
+}
+
+/* --- Rejilla de modulos --------------------------------------------------- */
+.section { padding-bottom: 84px; }
+.section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.section__note { font-size: 0.8rem; color: var(--text-muted); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  gap: 16px;
+}
+
+.tile {
+  padding: 24px 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.22s var(--ease), background 0.22s var(--ease), transform 0.22s var(--ease);
+}
+.tile:hover { background: var(--surface-hi); border-color: var(--border-hi); transform: translateY(-2px); }
+
+.tile__icon {
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  margin-bottom: 15px;
+  border-radius: 11px;
+  background: var(--gold-dim);
+  border: 1px solid rgba(224, 187, 120, 0.22);
+  color: var(--gold);
+}
+.tile__icon svg { width: 19px; height: 19px; }
+
+.tile__title { font-size: 1.03rem; margin-bottom: 7px; }
+.tile__text { font-size: 0.87rem; line-height: 1.58; color: var(--text-muted); }
+
+.badge {
+  display: inline-block;
+  margin-top: 15px;
+  padding: 3px 9px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: var(--gold-dim);
+  border-radius: 5px;
+}
+
+.footer {
+  padding: 26px 0 34px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .topbar { padding: 13px 18px; }
+  .wrap { padding: 0 18px; }
+  .hero { padding: 52px 0 40px; }
+  .userchip__name { display: none; }
+  .userchip { padding: 6px; }
+}
+
+@media (max-width: 420px) {
+  /* En pantallas estrechas la marca cede espacio al boton de salir. */
+  .topbar { padding: 11px 14px; gap: 10px; }
+  .brand__text { font-size: 0.95rem; }
+  .btn--ghost { padding: 8px 12px; font-size: 0.8rem; }
+}
