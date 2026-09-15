@@ -546,6 +546,19 @@ el_sitio_web() {
   bien "nginx sirviendo $DOMINIO"
 }
 
+# Las IPs publicas de un nombre, preguntando a resolutores de fuera. Sin
+# respuesta devuelve vacio, y quien llama lo interpreta como «no se sabe» y lo
+# intenta igual: el peor caso de intentarlo es un aviso.
+_resolver() {
+  local nombre="$1" servidor
+  for servidor in 1.1.1.1 8.8.8.8 9.9.9.9; do
+    { dig "@$servidor" +short +time=3 +tries=1 A    "$nombre"
+      dig "@$servidor" +short +time=3 +tries=1 AAAA "$nombre"; } 2>/dev/null \
+      | grep -E '^[0-9a-fA-F:.]+$' && return 0
+  done
+  return 0
+}
+
 el_certificado() {
   paso "El certificado (el candado del navegador)"
 
@@ -559,15 +572,15 @@ el_certificado() {
   # certbot falla, gasta uno de los pocos intentos que Let's Encrypt permite por
   # hora y deja al de enfrente sin entender por que.
   #
-  # Y SE PREGUNTA AL DNS, no al sistema. `getent` (o cualquier resolucion
-  # normal) mira primero /etc/hosts, y Ubuntu mete ahi el nombre de la propia
-  # maquina apuntando a 127.0.1.1: preguntando asi, el servidor contesta que su
-  # propio nombre no es suyo y NADIE conseguiria certificado nunca.
+  # Y SE PREGUNTA A UN RESOLUTOR DE FUERA, que esto tiene dos capas de trampa:
+  # `getent` mira /etc/hosts, donde Ubuntu apunta el nombre de la propia maquina
+  # a 127.0.1.1; y `dig` a secas tampoco vale, porque systemd-resolved SINTETIZA
+  # respuestas DNS a partir de ese mismo /etc/hosts. Medido aqui: las dos
+  # contestan 127.0.1.1 para un nombre que publicamente es 187.x.x.x. Por ahi,
+  # ningun VPS conseguiria certificado nunca.
   local ips_maquina ips_nombre coincide=0 ip
   ips_maquina="$(hostname -I 2>/dev/null || true)"
-  ips_nombre="$( { dig +short +time=3 +tries=1 A "$DOMINIO"; \
-                   dig +short +time=3 +tries=1 AAAA "$DOMINIO"; } 2>/dev/null \
-                 | grep -E '^[0-9a-fA-F:.]+$' || true )"
+  ips_nombre="$(_resolver "$DOMINIO")"
   for ip in $ips_nombre; do
     case " $ips_maquina " in *" $ip "*) coincide=1 ;; esac
   done
@@ -670,7 +683,9 @@ la_contrasena() {
   # Y la comprobacion es ABRIRLO, no mirar si existe: en una instalacion
   # automatica /dev/tty esta ahi pero abrirlo falla, porque no hay terminal de
   # control. Con `-r` se le preguntaba tres veces a nadie.
-  if : < /dev/tty 2>/dev/null; then
+  # El 2>/dev/null va DELANTE del <: las redirecciones se aplican en orden,
+  # y puesto detras, el fallo al abrir se imprime antes de haberlo callado.
+  if : 2>/dev/null < /dev/tty; then
     local intento
     for intento in 1 2 3; do
       if ESTUDIO_LOGIN_APP="$RAIZ/login" estudio-clave --nueva "$CUENTA" \
