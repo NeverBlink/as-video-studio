@@ -46,7 +46,17 @@ cuentas_guardadas() {
 
 generar() {
   # Mismo alfabeto que bin/user.js (sin 0/O ni 1/l/I, para poder dictarla).
-  LC_ALL=C tr -dc "$ALFABETO" </dev/urandom | head -c 24
+  #
+  # Y NO con `tr </dev/urandom | head -c 24`, que es lo evidente y esta roto:
+  # head cierra la tuberia al llegar a 24, tr muere de SIGPIPE, y con
+  # `pipefail` eso es un 141 que se lleva el script por delante ANTES de poner
+  # ninguna contrasena. Medido: `estudio-clave --nueva` salia con 141 y sin
+  # decir nada. Aqui la fuente de azar se acaba sola, asi que nadie cierra
+  # ninguna tuberia antes de tiempo.
+  local material
+  material="$(openssl rand -base64 256 2>/dev/null \
+              || dd if=/dev/urandom bs=256 count=1 2>/dev/null | base64)"
+  printf '%s' "$material" | LC_ALL=C tr -dc "$ALFABETO" | cut -c1-24
 }
 
 mostrar() {
