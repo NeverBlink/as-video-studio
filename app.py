@@ -5948,6 +5948,23 @@ def _cuentas_de_imagen():
     try:
         motor = PASOS_MODULOS.medios.motor("imagen_openai/imagen.py")
         return list(motor.cuentas_para_la_pantalla())
+    except SystemExit as fallo:
+        # UNA INSTALACION RECIEN HECHA NO TIENE NINGUNA CLAVE, y eso no es un
+        # fallo: es el estado de todo el mundo antes de poner la primera.
+        #
+        # El `except Exception` de abajo estaba escrito justo para esto y NO lo
+        # cogia: los motores estan escritos como CLI y abortan con SystemExit,
+        # que hereda de BaseException y no de Exception. Consecuencia medida en
+        # un VPS recien instalado: `GET /api/claves` y `PUT /api/claves`
+        # contestaban 500, y como la guia de inicio pasa por ahi, **la guia
+        # entera moria en el paso 1** -- el de la cuenta de Claude, que no tiene
+        # nada que ver con OpenAI. «Internal Server Error» y a callar.
+        #
+        # Sin clave la respuesta honesta es «ninguna cuenta», no un error.
+        texto = str(fallo)
+        if "OPENAI_API_KEY" in texto:
+            return []
+        return {"error": texto or "el motor de imagen aborto sin mensaje"}
     except Exception as fallo:  # noqa: BLE001
         return {"error": f"{type(fallo).__name__}: {fallo}"}
 
