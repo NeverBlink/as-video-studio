@@ -134,3 +134,10 @@ instala **lo que tiene al lado** en vez de bajar nada de GitHub:
 scp -r . root@IP:/root/asvs-prueba
 ssh root@IP "cd /root/asvs-prueba && bash instalar.sh"
 ```
+
+## Lo único del código que la aplicación reescribe
+
+`motores/reglas/reglas.json` — las reglas de dibujo que el destilador aprende de
+tu feedback. Viaja una por defecto en el repositorio, pero **el instalador y
+`asvs actualizar` la excluyen si ya existe**: si no, cada actualización borraría
+lo que ha aprendido tu estudio, en silencio y sin forma de recuperarlo.
