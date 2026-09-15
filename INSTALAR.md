@@ -37,11 +37,14 @@ Configuración.
 En Hostinger: entra en tu VPS y pulsa **«Consola web»**. Se abre una terminal
 negra dentro del navegador; no instala nada en tu ordenador.
 
-Te pedirá entrar:
+**Mira lo que pone en la última línea:**
 
-- donde dice `login:` escribe **`root`** y pulsa Intro
-- donde dice `Password:` escribe la contraseña de root y pulsa Intro
-  *(no se ve nada mientras escribes: es normal, se está escribiendo)*
+- Si ya dice algo como **`root@srv1234567:~#`**, ya estás dentro. **No escribas
+  nada más**: salta al paso 2. *(La consola suele entrar sola como root. Si
+  escribes `root` ahí te dirá «Command 'root' not found», que no es un fallo:
+  es que le has pedido un programa llamado «root».)*
+- Si dice **`login:`**, escribe `root` y pulsa Intro; y en `Password:`, la
+  contraseña de root. *(No se ve nada mientras la escribes: es normal.)*
 
 ¿No tienes esa contraseña? En esa misma página del panel está **«¿Olvidó la
 contraseña root? Restablece tu contraseña»**. Tarda un minuto.
