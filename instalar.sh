@@ -49,7 +49,7 @@ else
   N=""; B=""; VERDE=""; ROJO=""; AMBAR=""; GRIS=""
 fi
 
-TOTAL_PASOS=13
+TOTAL_PASOS=15
 NUM_PASO=0
 
 paso()  { NUM_PASO=$((NUM_PASO + 1)); printf '\n%s[%2d/%d]%s %s%s%s\n' "$GRIS" "$NUM_PASO" "$TOTAL_PASOS" "$N" "$B" "$*" "$N"; }
@@ -144,7 +144,7 @@ paquetes_base() {
     ffmpeg \
     python3 python3-venv python3-pip \
     nginx certbot python3-certbot-nginx \
-    fontconfig cabextract xfonts-utils software-properties-common \
+    fontconfig cabextract xfonts-utils software-properties-common dnsutils \
     ufw jq >/dev/null
 
   command -v ffmpeg  >/dev/null || fallo "ffmpeg no se ha instalado y sin el no hay ni voz ni video."
@@ -556,17 +556,27 @@ el_certificado() {
   fi
 
   # Antes de pedir nada: que el nombre apunte DE VERDAD a esta maquina. Si no,
-  # certbot falla, gasta uno de los pocos intentos que permite Let's Encrypt al
-  # dia y deja al de enfrente sin entender por que.
+  # certbot falla, gasta uno de los pocos intentos que Let's Encrypt permite por
+  # hora y deja al de enfrente sin entender por que.
+  #
+  # Y SE PREGUNTA AL DNS, no al sistema. `getent` (o cualquier resolucion
+  # normal) mira primero /etc/hosts, y Ubuntu mete ahi el nombre de la propia
+  # maquina apuntando a 127.0.1.1: preguntando asi, el servidor contesta que su
+  # propio nombre no es suyo y NADIE conseguiria certificado nunca.
   local ips_maquina ips_nombre coincide=0 ip
   ips_maquina="$(hostname -I 2>/dev/null || true)"
-  ips_nombre="$(getent ahosts "$DOMINIO" 2>/dev/null | awk '{print $1}' | sort -u)"
+  ips_nombre="$( { dig +short +time=3 +tries=1 A "$DOMINIO"; \
+                   dig +short +time=3 +tries=1 AAAA "$DOMINIO"; } 2>/dev/null \
+                 | grep -E '^[0-9a-fA-F:.]+$' || true )"
   for ip in $ips_nombre; do
     case " $ips_maquina " in *" $ip "*) coincide=1 ;; esac
   done
 
-  if [ "$coincide" = 0 ]; then
-    aviso "«$DOMINIO» no apunta a esta maquina todavia, asi que no pido certificado."
+  # Sin respuesta del DNS no se concluye nada: puede ser que el nombre no
+  # exista, o que este servidor no tenga a quien preguntar. Se intenta igual,
+  # que el peor caso es un aviso.
+  if [ -n "$ips_nombre" ] && [ "$coincide" = 0 ]; then
+    aviso "«$DOMINIO» apunta a otra maquina ($(echo "$ips_nombre" | tr '\n' ' ')), asi que no pido certificado."
     nota "cuando el DNS apunte aqui, lanza:  asvs https"
     _sin_tls
     return
@@ -657,7 +667,10 @@ la_contrasena() {
   # La pregunta va por la pantalla de verdad (3 y 4), no por la tuberia del
   # registro; y se repite si la contrasena es corta, en vez de generar una a
   # espaldas de quien acaba de escribirla.
-  if [ -r /dev/tty ]; then
+  # Y la comprobacion es ABRIRLO, no mirar si existe: en una instalacion
+  # automatica /dev/tty esta ahi pero abrirlo falla, porque no hay terminal de
+  # control. Con `-r` se le preguntaba tres veces a nadie.
+  if : < /dev/tty 2>/dev/null; then
     local intento
     for intento in 1 2 3; do
       if ESTUDIO_LOGIN_APP="$RAIZ/login" estudio-clave --nueva "$CUENTA" \
