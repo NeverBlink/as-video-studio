@@ -497,6 +497,9 @@ ENV
   chown -R "$USUARIO:$USUARIO" "$RAIZ/login"
 
   install -m 755 "$FUENTE_DESPLIEGUE/estudio-clave" /usr/local/bin/estudio-clave
+  # El mando se instala aqui y no al final: si algo falla despues, lo primero
+  # que se le va a pedir a quien tenga el problema es «manda `asvs estado`».
+  install -m 755 "$FUENTE_DESPLIEGUE/asvs" /usr/local/bin/asvs
 }
 
 # ------------------------------------------------------------ 10. servicios
@@ -748,5 +751,3 @@ la_contrasena
 comprobacion_final || true
 despedida
 
-# El comando de mantenimiento, que es lo que se pide cuando algo va raro.
-install -m 755 "$FUENTE_DESPLIEGUE/asvs" /usr/local/bin/asvs 2>/dev/null || true
