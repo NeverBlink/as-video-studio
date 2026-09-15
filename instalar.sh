@@ -600,6 +600,7 @@ el_certificado() {
   if certbot --nginx -d "$DOMINIO" --non-interactive --agree-tos --redirect \
        --keep-until-expiring "${correo[@]}" >/dev/null 2>&1; then
     _http2
+    _con_tls
     systemctl reload nginx
     bien "HTTPS activo, y se renueva solo"
   else
@@ -607,6 +608,17 @@ el_certificado() {
     nota "para reintentarlo:  asvs https"
     _sin_tls
   fi
+}
+
+# Con certificado, la cookie vuelve a ser segura y el sitio se nombra por
+# https. Hace falta porque una instalacion puede EMPEZAR sin certificado --el
+# DNS todavia no apuntaba-- y conseguirlo en una pasada posterior: sin esto, el
+# acceso se quedaria con la cookie insegura para siempre, sirviendo por HTTPS.
+_con_tls() {
+  sed -i 's|^SECURE_COOKIES=.*|SECURE_COOKIES=true|; s|^APP_URL=http://|APP_URL=https://|; s|^APP_ORIGENES=http://|APP_ORIGENES=https://|' \
+    "$RAIZ/login/.env"
+  systemctl restart as-video-login
+  ESQUEMA="https"
 }
 
 # Sin HTTPS, la cookie de sesion NO puede ir marcada como segura: el navegador
