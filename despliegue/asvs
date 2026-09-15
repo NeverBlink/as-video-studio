@@ -29,12 +29,17 @@ no() { printf '  %s✗%s %s\n' "$ROJO" "$N" "$*"; }
 
 _puerto() { sed -n 's/^PUERTO=//p' "$RAIZ/datos/entorno" 2>/dev/null | head -1; }
 _dominio() { sed -n 's|^APP_URL=https\?://||p' "$RAIZ/login/.env" 2>/dev/null | head -1; }
+# Y por que esquema se entra. Se lee del .env y no se da por supuesto https: una
+# instalacion sin certificado va por http, y comprobarla con https daba un fallo
+# que no lo era -- el propio estado decia que estaba roto lo que funcionaba.
+_esquema() { grep -m1 '^APP_URL=' "$RAIZ/login/.env" 2>/dev/null | sed 's|^APP_URL=||' | cut -d: -f1; }
 
 estado() {
-  local puerto dominio codigo
-  puerto="$(_puerto)"; dominio="$(_dominio)"
+  local puerto dominio esquema codigo
+  puerto="$(_puerto)"; dominio="$(_dominio)"; esquema="$(_esquema)"
+  [ -n "$esquema" ] || esquema=https
 
-  printf '\n%s  AS Video Studio%s   %s%s%s\n\n' "$B" "$N" "$GRIS" "$dominio" "$N"
+  printf '\n%s  AS Video Studio%s   %s%s://%s%s\n\n' "$B" "$N" "$GRIS" "$esquema" "$dominio" "$N"
 
   systemctl is-active --quiet as-video-studio && si "el estudio esta en marcha" || no "el estudio esta PARADO"
   systemctl is-active --quiet as-video-login  && si "el acceso esta en marcha"  || no "el acceso esta PARADO"
@@ -43,7 +48,7 @@ estado() {
   curl -fsS --max-time 5 "http://127.0.0.1:${puerto:-8110}/api/salud" >/dev/null 2>&1 \
     && si "el estudio contesta" || no "el estudio no contesta por dentro"
 
-  codigo="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -k "https://$dominio/login" 2>/dev/null || true)"
+  codigo="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -k "$esquema://$dominio/login" 2>/dev/null || true)"
   [ "$codigo" = "200" ] && si "la pantalla de acceso se ve desde fuera" || no "la pantalla de acceso contesta $codigo"
 
   printf '\n%s  lo que hace falta para generar%s\n' "$B" "$N"
