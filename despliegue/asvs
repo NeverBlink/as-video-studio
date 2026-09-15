@@ -90,9 +90,15 @@ actualizar() {
   # Se para antes de tocar nada: cambiar el codigo por debajo de una tanda que
   # esta corriendo es la forma mas rapida de perderla.
   systemctl stop as-video-studio
+  # reglas.json va excluido a proposito: es lo unico del arbol de codigo que la
+  # aplicacion reescribe (el destilador aprende de tu feedback y lo guarda ahi).
+  # Sin excluirlo, actualizar borraria lo aprendido sin decir nada.
   rsync -a --delete --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
     --exclude='cache/' --exclude='proyectos/' --exclude='banco/' --exclude='secretos/' \
+    --exclude='motores/reglas/reglas.json' \
     "$temporal/" "$RAIZ/app/"
+  [ -f "$RAIZ/app/motores/reglas/reglas.json" ] \
+    || cp "$temporal/motores/reglas/reglas.json" "$RAIZ/app/motores/reglas/reglas.json"
   rsync -a --delete --exclude='node_modules' --exclude='datos' --exclude='.env' \
     "$RAIZ/app/despliegue/login/" "$RAIZ/login/"
   ( cd "$RAIZ/login" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 ) || true

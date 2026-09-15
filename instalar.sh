@@ -92,10 +92,16 @@ comprobaciones() {
 
   [ "$(uname -m)" = "x86_64" ] || fallo "Hace falta un procesador x86_64 (este es $(uname -m)): el navegador que dibuja los planos no existe para esta arquitectura."
 
-  local nucleos mem_gb disco_gb
+  local nucleos mem_gb disco_gb libre_kb
   nucleos="$(nproc)"
   mem_gb=$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 1024 / 1024 ))
-  disco_gb=$(( $(df -P --output=avail /opt 2>/dev/null | tail -1 || df -P --output=avail / | tail -1) / 1024 / 1024 ))
+  # En dos pasos y con repuesto: si /opt no existe todavia, `df` no imprime
+  # nada y la cuenta de abajo reventaria con un error de aritmetica, que es una
+  # forma tontisima de no llegar ni a empezar.
+  libre_kb="$(df -Pk /opt 2>/dev/null | awk 'NR==2{print $4}')"
+  [ -n "$libre_kb" ] || libre_kb="$(df -Pk / | awk 'NR==2{print $4}')"
+  [ -n "$libre_kb" ] || libre_kb=0
+  disco_gb=$(( libre_kb / 1024 / 1024 ))
 
   bien "$nucleos nucleos, ${mem_gb} GB de memoria, ${disco_gb} GB libres"
   [ "$mem_gb" -ge 3 ]    || fallo "Con ${mem_gb} GB de memoria el render se queda sin sitio. Hacen falta 4 GB como minimo, y 8 para ir comodo."
@@ -138,7 +144,7 @@ paquetes_base() {
     ffmpeg \
     python3 python3-venv python3-pip \
     nginx certbot python3-certbot-nginx \
-    fontconfig cabextract xfonts-utils \
+    fontconfig cabextract xfonts-utils software-properties-common \
     ufw jq >/dev/null
 
   command -v ffmpeg  >/dev/null || fallo "ffmpeg no se ha instalado y sin el no hay ni voz ni video."
@@ -372,7 +378,15 @@ descargar_codigo() {
   rsync -a --delete \
     --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
     --exclude='cache/' --exclude='proyectos/' --exclude='banco/' --exclude='secretos/' \
+    --exclude='motores/reglas/reglas.json' \
     "$origen/" "$RAIZ/app/"
+
+  # Las reglas de dibujo son el unico fichero del arbol de codigo que la
+  # aplicacion REESCRIBE: el destilador las aprende del feedback y las guarda
+  # ahi. Viaja una por defecto, pero solo se pone si no habia ninguna — si no,
+  # cada actualizacion le borraria al usuario lo que ha aprendido su estudio.
+  [ -f "$RAIZ/app/motores/reglas/reglas.json" ] \
+    || cp "$origen/motores/reglas/reglas.json" "$RAIZ/app/motores/reglas/reglas.json"
 
   # El login es una aplicacion aparte (Node) y vive fuera del arbol del estudio.
   rsync -a --delete --exclude='node_modules' --exclude='datos' --exclude='.env' \
@@ -585,12 +599,22 @@ _sin_tls() {
 _http2() {
   local sitio=/etc/nginx/sites-available/as-video-studio version
   version="$(nginx -v 2>&1 | sed 's/.*\///; s/ .*//')"
+  # Y no es lo mismo segun la version: hasta la 1.24 HTTP/2 se pide en la propia
+  # linea `listen`; de la 1.25 en adelante es una directiva suelta y ponerlo en
+  # el `listen` solo saca un aviso y no lo activa.
   if printf '%s\n1.25.0\n' "$version" | sort -V | head -1 | grep -q '^1\.25\.0$'; then
-    grep -q '^\s*http2 on;' "$sitio" || sed -i '0,/listen .*443 ssl/s//&\n    http2 on;/' "$sitio"
+    grep -q 'http2 on;' "$sitio" \
+      || sed -i '0,/listen [^;]*443 ssl[^;]*;/s//&\n    http2 on;/' "$sitio"
   else
-    sed -i 's/\(listen .*443 ssl\)\(;\)/\1 http2\2/' "$sitio"
+    grep -q '443 ssl http2' "$sitio" \
+      || sed -i 's/\(listen [^;]*443 ssl\)\([^;]*\);/\1 http2\2;/' "$sitio"
   fi
-  nginx -t >/dev/null 2>&1 || sed -i 's/ http2;/;/' "$sitio"
+  # Si algo de esto no le gusta a nginx, se deshace: HTTP/2 es una mejora, no
+  # una condicion para que el sitio funcione.
+  nginx -t >/dev/null 2>&1 || {
+    sed -i 's/ ssl http2/ ssl/; /^\s*http2 on;$/d' "$sitio"
+    aviso "no se ha podido activar HTTP/2; el sitio va igual, solo un poco mas lento con muchas miniaturas."
+  }
 }
 
 # ---------------------------------------------------------- 12. cortafuegos
@@ -609,10 +633,14 @@ cortafuegos() {
 la_contrasena() {
   paso "Tu contrasena"
 
-  local hay
-  hay="$( cd "$RAIZ/login" && set -a && . ./.env && set +a && \
-          sudo -u "$USUARIO" -E node bin/user.js list 2>/dev/null | grep -c "$CUENTA" || true )"
-  if [ "${hay:-0}" -gt 0 ]; then
+  # Se pregunta por «No hay cuentas», que es la frase exacta que imprime el CLI
+  # cuando la base esta vacia. Buscar el nombre de la cuenta en la tabla seria
+  # fragil: la cabecera de esa tabla tambien lleva texto.
+  local vacio
+  vacio="$( cd "$RAIZ/login" && set -a && . ./.env && set +a && \
+            sudo -u "$USUARIO" -E node bin/user.js list 2>/dev/null \
+            | grep -c 'No hay cuentas' || true )"
+  if [ "${vacio:-0}" -eq 0 ]; then
     nota "ya habia una cuenta: no se toca."
     nota "para cambiar la contrasena:  estudio-clave --nueva"
     return
