@@ -708,7 +708,9 @@ la_contrasena() {
     done
     aviso "no se ha podido poner la contrasena a mano: genero una."
   fi
-  ESTUDIO_LOGIN_APP="$RAIZ/login" estudio-clave --nueva "$CUENTA" </dev/null
+  # Tambien por la pantalla (3 y 4): lo que imprime lleva la contrasena, y el
+  # registro de la instalacion queda en disco.
+  ESTUDIO_LOGIN_APP="$RAIZ/login" estudio-clave --nueva "$CUENTA" </dev/null >&3 2>&4
 }
 
 # ------------------------------------------------------------ comprobacion
