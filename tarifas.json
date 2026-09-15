@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "moneda": "USD",
+  "actualizado": "2026-08-13T12:04:49",
+  "openai": {
+    "modelo": "gpt-image-2",
+    "usd_por_token": {
+      "entrada_texto": 5e-06,
+      "entrada_imagen": 8e-06,
+      "salida": 3e-05,
+      "nota": "Precios de gpt-image-2 por token (5, 8 y 30 $ por millon). Aqui esta el grueso del gasto de este pipeline y hasta ahora no se cobraba: a cada plano se le adjuntan las referencias de estilo, las de reparto y las dos de continuidad, y eso son unos 6.700 tokens de ENTRADA por imagen. En una tanda de 174 planos fueron 1,17 millones de tokens (unos 9,4 $) contra 1,04 $ de imagenes: el medidor ensenaba la decima parte. La entrada que la API no desglosa se tarifa como imagen, que es el precio mas alto de los dos: mas vale pasarse por arriba que volver a ensenar un gasto que no es."
+    },
+    "usd_por_imagen": {
+      "1536x1024": {
+        "low": 0.006,
+        "medium": 0.041,
+        "high": 0.165
+      },
+      "1024x1024": {
+        "low": 0.006,
+        "medium": 0.053,
+        "high": 0.211
+      },
+      "nota": "Respaldo, no la via principal. Solo cubre la imagen DEVUELTA, que es la parte pequena, y solo se usa cuando la API no devuelve 'usage' y por tanto no hay tokens que tarifar. Cuando hay usage manda usd_por_token, y las dos no se suman nunca: la imagen devuelta ya son los tokens de salida."
+    }
+  },
+  "tts": {
+    "proveedor": "cartesia",
+    "modelo": "sonic-3",
+    "usd_por_caracter": 6.5e-05,
+    "plan": "Pro con overages",
+    "nota": "Plan Pro (5 $/mes, 100.000 creditos incluidos) con overages a 65 $ por millon de creditos. En Sonic, 1 credito = 1 caracter, asi que el caracter de mas cuesta 0,000065 $. Se anota el coste MARGINAL a proposito: los 100.000 creditos incluidos ya estan pagados cada mes, y prorratear los 5 $ haria que el mismo video costara distinto segun cuanto se hubiera usado antes. Los eventos anotados antes de fijar esta tarifa no se reescriben: el historico anterior sigue sin importe."
+  },
+  "claude_cli": {
+    "suma_al_total": false,
+    "nota": "Va contra la suscripcion, no contra un contador con precio por llamada: se miden tokens y nunca dolares."
+  }
+}

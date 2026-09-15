@@ -1,0 +1,263 @@
+/* =============================================================================
+   Studio — hoja de estilos comun del acceso.
+
+   La paleta es LA MISMA que la de la aplicacion (web/estilo.css del estudio):
+   quien entra por aqui y quien ya esta dentro tienen que estar en el mismo
+   sitio, no en dos aplicaciones pegadas. Los nombres de token son los de esta
+   hoja y los VALORES son los de alli, para no reescribir login.css entero.
+
+   Sin @import de Google Fonts a proposito: el estudio usa la tipografia del
+   sistema, asi que el login no puede depender de una descarga externa para
+   verse igual -- y ademas entra antes.
+   ========================================================================== */
+
+:root {
+  /* superficies, de mas al fondo a mas cerca (estudio: bg, panel, hueco, boton) */
+  --bg:           #0a0b0e;
+  --bg-elev:      #14161c;
+  --surface:      #191c24;
+  --surface-hi:   #1e222a;
+  --border:       #252932;
+  --border-hi:    #2c3a63;
+
+  --text:         #e9ecf2;
+  --text-dim:     #98a1b0;
+  --text-muted:   #7c8494;
+
+  /* El acento del estudio. Se siguen llamando --gold porque es el nombre que
+     usa el resto de esta hoja; el color es el azul de la aplicacion. */
+  --gold:         #6c8cff;
+  --gold-hi:      #8fa6ff;
+  --gold-dim:     #202a44;
+  --sobre-acento: #0a0b0e;
+
+  --danger:       #ff5d5d;
+  --danger-bg:    #241318;
+  --success:      #3ddc97;
+
+  /* El estudio no usa serif en ningun sitio: una sola familia. */
+  --serif: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --sans:  ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+
+  --radius:    10px;
+  --radius-sm: 7px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --- Fondo aurora: dos manchas de luz muy suaves, sin distraer --------------
+   Se dibujan como radial-gradient puro, sin filter: blur(). Un blur de 90px
+   sobre una capa fixed obliga al navegador a repintar toda la pantalla en cada
+   scroll, y eso provocaba franjas negras al bajar por la pagina. El degradado
+   da el mismo resultado visual y no cuesta nada. */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(58vw 58vw at 10% -6%,  rgba(108, 140, 255, 0.10), transparent 62%),
+    radial-gradient(52vw 52vw at 90% 106%, rgba(108, 140, 255, 0.07), transparent 62%);
+}
+
+/* --- Marca ---------------------------------------------------------------- */
+.brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; }
+.brand__mark {
+  width: 38px; height: 38px;
+  flex: 0 0 38px;
+  border-radius: 11px;
+  display: grid; place-items: center;
+  background: var(--gold-dim);
+  border: 1px solid var(--border-hi);
+}
+.brand__mark svg { width: 18px; height: 18px; display: block; color: var(--gold); }
+.brand__text {
+  font-family: var(--serif);
+  font-size: 1.06rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.brand__text em { font-style: normal; color: var(--gold); }
+
+/* --- Tipografia ----------------------------------------------------------- */
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.015em; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.6vw, 3.15rem); line-height: 1.14; }
+h2 { font-size: clamp(1.25rem, 2.4vw, 1.6rem); line-height: 1.25; }
+p  { margin: 0; }
+
+.eyebrow {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* --- Formularios ---------------------------------------------------------- */
+.field { margin-bottom: 18px; }
+/* Las etiquetas de la aplicacion: versalitas pequenas y espaciadas. */
+.field__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.field__wrap { position: relative; display: flex; align-items: center; }
+
+.input {
+  width: 100%;
+  padding: 13px 15px;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.input::placeholder { color: var(--text-muted); }
+.input:hover:not(:focus) { border-color: var(--border-hi); }
+/* Igual que en la aplicacion: al enfocar, el borde se pone del color de acento
+   y no cambia nada mas. */
+.input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-dim);
+}
+.input--password { padding-right: 52px; }
+
+.reveal {
+  position: absolute;
+  right: 6px;
+  display: grid; place-items: center;
+  width: 40px; height: 36px;
+  border: 0; border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.18s var(--ease), background 0.18s var(--ease);
+}
+.reveal:hover { color: var(--text-dim); background: rgba(255, 255, 255, 0.05); }
+.reveal:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.reveal svg { width: 18px; height: 18px; }
+
+/* --- Botones -------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%;
+  padding: 13px 20px;
+  font-family: var(--sans);
+  font-size: 0.94rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  /* El boton principal del estudio: acento plano y el texto del color del
+     fondo. Sin degradado ni relieve -- alli no hay ninguno. */
+  color: var(--sobre-acento);
+  background: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+.btn:hover:not(:disabled) {
+  background: var(--gold-hi);
+  border-color: var(--gold-hi);
+}
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 3px; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn--ghost {
+  width: auto;
+  padding: 9px 15px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.btn--ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hi);
+  border-color: var(--border-hi);
+  box-shadow: none;
+  filter: none;
+}
+
+/* Spinner del boton mientras se envia el formulario */
+.spinner {
+  width: 15px; height: 15px;
+  border: 2px solid rgba(26, 21, 8, 0.28);
+  border-top-color: #1a1508;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Avisos --------------------------------------------------------------- */
+.alert {
+  display: none;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  font-size: 0.87rem;
+  line-height: 1.45;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+}
+.alert.is-visible { display: flex; animation: alertIn 0.28s var(--ease); }
+.alert--error { color: var(--danger); background: var(--danger-bg); border-color: rgba(255, 122, 110, 0.28); }
+.alert svg { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 2px; }
+
+@keyframes alertIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Utilidades ----------------------------------------------------------- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* La CSP bloquea los atributos style="" inline, asi que todo lo que antes
+   iba en linea vive aqui como clase. */
+.is-hidden { display: none !important; }
+
+/* Pagina de error 404 */
+.pagemsg { text-align: center; }
+.pagemsg h1 { margin: 16px 0 14px; }
+.pagemsg__text { margin-bottom: 28px; color: var(--text-muted); }
+.btn--link { width: auto; padding: 12px 28px; text-decoration: none; }

@@ -1,0 +1,13 @@
+# Los scripts que corren en el servidor van SIEMPRE con finales de linea Unix.
+# Si a instalar.sh le entran los de Windows, bash lo rechaza con un
+# «$'\r': command not found» que no dice nada de finales de linea, y eso le
+# pasaria a quien lo instale, no a quien lo escribe.
+*.sh              text eol=lf
+instalar.sh       text eol=lf
+despliegue/asvs           text eol=lf
+despliegue/estudio-clave  text eol=lf
+despliegue/estudio-edge   text eol=lf
+despliegue/*.conf         text eol=lf
+despliegue/*.service      text eol=lf
+*.py              text eol=lf
+*.js              text eol=lf

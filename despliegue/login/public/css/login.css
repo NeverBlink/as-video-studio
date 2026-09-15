@@ -1,0 +1,96 @@
+/* Studio — pantalla de acceso.
+   Los colores salen todos de styles.css, que trae la paleta de la aplicacion. */
+
+.login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 32px 20px;
+}
+
+.login__inner {
+  width: 100%;
+  max-width: 412px;
+  animation: cardIn 0.5s var(--ease) both;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.login__brand { display: flex; justify-content: center; margin-bottom: 26px; }
+
+/* Panel plano, como los del estudio: fondo solido y un borde de una linea. El
+   degradado translucido de antes venia del otro lenguaje visual y aqui se veia
+   como una tarjeta flotando encima de la aplicacion en vez de parte de ella. */
+.card {
+  padding: 34px 32px 30px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.9);
+}
+
+.card__head { margin-bottom: 26px; text-align: center; }
+.card__title { font-size: 1.32rem; font-weight: 600; margin-bottom: 7px; }
+.card__sub { font-size: 0.9rem; color: var(--text-muted); }
+
+.login__foot {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---- «¿Has olvidado la contraseña?»: plegado, que es lo que no se necesita
+   casi nunca; abierto, una lista de pasos que se puede seguir desde el movil
+   con el panel de Hostinger en otra pestana. */
+.recuperacion {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.recuperacion summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  text-align: center;
+  list-style: none;
+}
+.recuperacion summary::-webkit-details-marker { display: none; }
+.recuperacion summary:hover,
+.recuperacion[open] summary { color: var(--text); }
+.recuperacion p { margin: 12px 0 0; }
+.recuperacion ol { margin: 10px 0 0; padding-left: 22px; }
+.recuperacion li { margin-top: 7px; }
+.recuperacion li b { color: var(--text-dim); font-weight: 600; }
+.recuperacion a { color: var(--gold-hi); text-decoration: underline; text-underline-offset: 2px; }
+.recuperacion a:hover { color: var(--text); }
+.recuperacion code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-hi);
+  color: var(--text);
+  white-space: nowrap;
+}
+.recuperacion__nota { opacity: 0.85; }
+
+.login__legal {
+  margin-top: 22px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  opacity: 0.75;
+}
+
+@media (max-width: 420px) {
+  .card { padding: 28px 22px 26px; }
+}

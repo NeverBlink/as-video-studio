@@ -1,0 +1,11 @@
+#!/bin/sh
+# El navegador que rasteriza cada plano.
+#
+# --no-sandbox: Ubuntu 24.04 restringe por AppArmor los espacios de nombres de
+# usuario sin privilegios, y sin esto el navegador NO ARRANCA bajo el servicio
+# (falla con un error de zygote que no dice nada de AppArmor). El aislamiento no
+# se pierde: el proceso corre como un usuario sin permisos y con PrivateTmp.
+#
+# --disable-dev-shm-usage: en un VPS /dev/shm suele ser pequeño, y sin esto el
+# navegador se queda sin memoria compartida a mitad de una tanda larga.
+exec __NAVEGADOR__ --no-sandbox --disable-dev-shm-usage "$@"

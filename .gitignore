@@ -1,0 +1,35 @@
+# LOS DATOS, que no son el producto. Cada uno se puede mover con su variable de
+# entorno (ver README.md), y estos son los sitios de fabrica: aqui aparecen al
+# usarlo y no tienen nada que hacer en el control de versiones.
+proyectos/
+banco/
+cache/
+presets.json
+recetas.json
+ajustes.json
+estadisticas.json
+enlaces.json
+coste_global.jsonl
+bitacora_global.jsonl
+
+# LAS CLAVES. Nunca, y no se arregla borrandolas de un commit: se rotan.
+secretos/
+.env
+
+# Y lo de Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Lo que dejan las pruebas cuando se cortan a medias
+*.tmp
+estado.roto.*
+
+# Lo del acceso (Node): las librerias se instalan en el servidor, y su base de
+# datos y su .env son de cada instalacion.
+despliegue/login/node_modules/
+despliegue/login/datos/
+node_modules/
+.claude/

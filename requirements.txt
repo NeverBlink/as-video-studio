@@ -1,0 +1,21 @@
+# Lo que necesita AS Video Studio para arrancar, con version fija.
+#
+# POR QUE FIJA Y NO "lo ultimo": esto se instala en la maquina de otra persona,
+# a la que no se le puede pedir que depure un fallo de una version que salio
+# ayer. Son exactamente las versiones con las que se probo el instalador.
+#
+# Para subirlas: cambiarlas aqui, correr las pruebas (pruebas.ps1) y volver a
+# instalar en una maquina limpia. No se sube una version "por estar al dia".
+
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn==0.52.1
+python-multipart==0.0.32
+
+pillow==12.3.0
+numpy==2.5.2
+
+requests==2.34.2
+# Solo por el camino de la voz por websocket (pasos/p4_voz), pero sin el ese
+# camino falla en el momento de usarlo, no al arrancar: va aqui a proposito.
+websocket-client==1.9.0

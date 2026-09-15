@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover: en un movil con muesca, sin esto queda una franja negra
+     arriba y abajo. Lo que se mete debajo del notch se recupera con las
+     env(safe-area-inset-*) de la hoja de estilo. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161c">
+<title>AS Video Studio</title>
+<!-- La claqueta. Va como data: URI para no pedir un fichero mas: sin esto el
+     navegador pedia /favicon.ico en cada carga y dejaba un 404 permanente en la
+     consola. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎬</text></svg>">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+
+<header id="cabecera">
+  <h1>AS Video Studio</h1>
+  <button id="btn-proyecto" class="proyecto" title="Proyecto abierto — pulsa para cambiar, crear o apartar"></button>
+  <span id="meta-proyecto" class="meta"></span>
+  <span class="crece"></span>
+  <span id="faro" class="meta"></span>
+  <button id="coste" class="coste" title="Coste del vídeo — pulsa para ver el desglose por paso"></button>
+  <!-- Configuracion: las claves de API y las cuentas. Va en la barra y no en
+       una pestana porque no es de este video: es de la maquina. -->
+  <button id="btn-config" class="mini fantasma" title="Claves de API y cuentas">⚙</button>
+  <!-- LA CUENTA. Vacio y oculto de fabrica: solo se rellena si delante hay un
+       login que conteste /api/me. En local no lo hay --se entra sin cuenta--,
+       asi que la pastilla no aparece y la barra se ve igual que siempre. -->
+  <div id="cuenta" class="cuenta oculto">
+    <span id="cuenta-nombre" class="nombre"></span>
+    <button id="btn-salir" class="mini fantasma" title="Cerrar la sesion">Salir</button>
+  </div>
+</header>
+
+<aside id="config" class="plegado">
+  <div class="lateral-cab">
+    <h2>Configuración</h2>
+    <button id="btn-cerrar-config" class="mini fantasma" title="Cerrar">×</button>
+  </div>
+  <div id="cuerpo-config"></div>
+</aside>
+<div id="menu-proyectos" class="plegado"></div>
+
+<div id="coste-detalle" class="plegado"></div>
+
+<div id="cuerpo">
+  <main id="panel"><div class="contenido cargando">cargando…</div></main>
+</div>
+
+<!-- EL ASISTENTE. La burbuja de abajo a la derecha y su cajon. Estan desde el
+     primer dia y sin ninguna clave: si el CLI de Claude no tiene sesion, el
+     cajon lo dice y manda a entrar. El estado (sin sesion, pensando, hay
+     respuesta) va en clases de la burbuja, que las pone app.js. -->
+<button id="burbuja-asistente" class="burbuja-asistente" title="Asistente: pregunta lo que sea del Estudio">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+    <path d="M4 5h16v11H9l-5 4z"/>
+    <path d="M8 9h8M8 12.5h5"/>
+  </svg>
+</button>
+<aside id="asistente" class="plegado">
+  <div class="lateral-cab">
+    <h2>Asistente</h2>
+    <span id="asistente-estado"></span>
+    <span class="crece"></span>
+    <button id="btn-nueva-charla" class="mini fantasma" title="Empezar una charla nueva">Nueva</button>
+    <button id="btn-cerrar-asistente" class="mini fantasma" title="Cerrar">×</button>
+  </div>
+  <div id="asistente-cuerpo"></div>
+  <div id="asistente-pie">
+    <textarea id="asistente-texto" rows="2" placeholder="Pregunta lo que quieras: un error, un paso parado, dónde está algo…"></textarea>
+    <div class="asistente-mandos">
+      <button id="btn-cancelar-asistente" class="mini fantasma" hidden>Parar</button>
+      <span class="crece"></span>
+      <button id="btn-enviar-asistente" class="primario mini">Enviar</button>
+    </div>
+  </div>
+</aside>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

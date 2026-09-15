@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <title>Acceso · AS Video Studio</title>
+  <link rel="stylesheet" href="/css/styles.css?v=9">
+  <link rel="stylesheet" href="/css/login.css?v=9">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"></div>
+
+  <main class="login">
+    <div class="login__inner">
+
+      <div class="login__brand">
+        <span class="brand">
+          <span class="brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M9 7.5l8 4.5-8 4.5z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="brand__text"><em>Studio</em></span>
+        </span>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <h1 class="card__title">Inicia sesión</h1>
+          <p class="card__sub">AS Video Studio</p>
+        </div>
+
+        <div class="alert alert--error" id="error" role="alert" aria-live="assertive">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>
+          </svg>
+          <span id="errorText"></span>
+        </div>
+
+        <!-- SOLO LA CONTRASEÑA. No hay usuario: la contraseña dice de qué cuenta
+             es (ver lib/acceso.js), y la única llave del Estudio es esa. -->
+        <form id="loginForm" novalidate autocomplete="on">
+          <div class="field">
+            <label class="field__label" for="password">Contraseña</label>
+            <div class="field__wrap">
+              <input class="input input--password" type="password" id="password" name="password"
+                     autocomplete="current-password" required autofocus>
+              <button class="reveal" type="button" id="reveal"
+                      aria-label="Mostrar contraseña" aria-pressed="false" tabindex="0">
+                <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/>
+                  <circle cx="12" cy="12" r="2.7"/>
+                </svg>
+                <svg id="eyeClosed" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                     class="is-hidden">
+                  <path d="M4 4l16 16"/>
+                  <path d="M10.6 6.2A9.9 9.9 0 0112 6c6.4 0 10 6 10 6a17 17 0 01-3.3 3.9"/>
+                  <path d="M6.6 7.1A16.6 16.6 0 002 12s3.6 6.5 10 6.5a10 10 0 003.4-.6"/>
+                  <path d="M9.9 9.9a3 3 0 004.2 4.2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <button class="btn" type="submit" id="submit">
+            <span id="submitText">Entrar</span>
+          </button>
+        </form>
+
+        <!-- CÓMO SE RECUPERA. La copia de la contraseña está en el servidor, en
+             una carpeta que solo root puede leer, y a root se llega por la
+             consola web del panel de Hostinger: quien tiene el panel tiene la
+             llave, y nadie más. El enlace al VPS concreto lo rellena login.js
+             con el id que sirve /api/csrf (HOSTINGER_VPS_ID en el .env). -->
+        <details class="recuperacion" id="recuperacion">
+          <summary>¿Has olvidado la contraseña?</summary>
+          <p>
+            La copia está en tu servidor y se lee desde la consola de tu panel de
+            Hostinger. Nadie más puede llegar a ella.
+          </p>
+          <ol>
+            <li>
+              Entra en <a id="panelLink" href="https://hpanel.hostinger.com/vps"
+              target="_blank" rel="noopener">tu VPS en el panel de Hostinger</a>
+              y pulsa <b>Consola web</b>.
+            </li>
+            <li>
+              La consola pide <code>login:</code> → escribe <code>root</code> y
+              pulsa Intro. Después pide <code>Password:</code> → escribe la
+              contraseña root (no se ve mientras la tecleas) e Intro.
+            </li>
+            <li>
+              ¿No tienes la contraseña root? En esa misma página del panel:
+              <b>«¿Olvidó la contraseña root? Restablece tu contraseña»</b>.
+              Espera un minuto y vuelve a la consola.
+            </li>
+            <li>
+              Escribe <code>estudio-clave</code> e Intro: aparece la contraseña
+              del Estudio. Cópiala y entra aquí con ella.
+            </li>
+          </ol>
+          <p class="recuperacion__nota">
+            Para cambiarla por otra, en esa consola: <code>estudio-clave --nueva</code>.
+          </p>
+        </details>
+      </div>
+
+      <p class="login__legal">Acceso privado · AS Video Studio</p>
+    </div>
+  </main>
+
+  <script src="/js/login.js?v=9"></script>
+</body>
+</html>
