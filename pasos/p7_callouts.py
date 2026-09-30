@@ -31,6 +31,7 @@ Salidas por escena: capas/<id>.svg, movimiento/<id>.json, hyper/<id>.png y
 previo/<id>.png (plano + capa compuestos para la pantalla de revision).
 """
 import os
+from pathlib import Path
 import sys
 import time
 
@@ -918,7 +919,7 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
     else:
         x0, y0, x1 = 0.0, 0.0, float(lienzo[0])
     escala = ancho / max(1.0, (x1 - x0))
-    html = (f'<html><body style="margin:0;width:{ancho}px;height:{alto}px;'
+    html = (f'<html><body style="margin:0;width:{ancho}px;height:{alto + 4}px;'
             f'overflow:hidden;background:#0b0c09">'
             f'<div style="position:absolute;left:0;top:0;'
             f'width:{ancho}px;height:{alto}px;overflow:hidden">'
@@ -926,7 +927,7 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
             f'transform-origin:0 0;'
             f'transform:translate({-x0 * escala:.3f}px,{-y0 * escala:.3f}px) '
             f'scale({escala:.6f})">'
-            f'<img src="file:///{ruta_png.replace(chr(92), "/")}" '
+            f'<img src="{Path(ruta_png).resolve().as_uri()}" '
             f'style="display:block;width:{lienzo[0]}px;height:{lienzo[1]}px">'
             f'<div style="position:absolute;left:0;top:0;'
             f'width:{lienzo[0]}px;height:{lienzo[1]}px">{svg}</div>'
@@ -938,46 +939,44 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
             f'width:{ancho}px;height:{alto}px">{fija}</div>'
             f'</div>'
             f'<script>{BUSCAR_ENTRADAS}</script>'
+            # Firma fuera del cuadro: solo aparece si la imagen se ha cargado.
+            f'<div id="firma-previa" style="position:absolute;left:0;top:{alto}px;'
+            f'width:12px;height:4px;z-index:99999"></div>'
+            '<script>window.addEventListener("load",()=>{'
+            'if([...document.images].every(i=>i.complete&&i.naturalWidth>0))'
+            'document.getElementById("firma-previa").style.background='
+            '"linear-gradient(to right,#137bc9 0 4px,#da315f 4px 8px,#29b46e 8px 12px)";'
+            '});</script>'
             f'</body></html>')
     ruta_html = medios.escribir_texto(destino + ".html", html)
-    medios.rasterizar(ruta_html, destino, ancho, alto, transparente=False)
+    medios.rasterizar(ruta_html, destino, ancho, alto + 4, transparente=False)
     os.remove(ruta_html)
-    _comprobar_previa(destino)
+    _comprobar_previa(destino, salida)
     return destino
 
 
-#: El fondo del cuadro compuesto, en el HTML de arriba. Sirve de FIRMA: si la
-#: esquina no se parece a esto, lo que hay dentro no lo ha pintado esta funcion.
-FONDO_PREVIA = (0x0b, 0x0c, 0x09)
+FIRMA_PREVIA = ((0x13, 0x7b, 0xc9), (0xda, 0x31, 0x5f), (0x29, 0xb4, 0x6e))
 
 
-def _comprobar_previa(destino):
-    """Levanta si el PNG compuesto no es el cuadro, sino otra cosa.
+def _comprobar_previa(destino, salida=SALIDA):
+    """Verifica la firma de carga y la retira sin tocar el cuadro de salida.
 
-    EDGE NO FALLA CUANDO NO ENCUENTRA ALGO: pinta SU pagina de error --«File not
-    found», casi blanca-- y la fotografia. El PNG aparece, `rasterizar` lo da
-    por bueno, y lo que se guarda como cuadro de revision es la captura de un
-    mensaje de un navegador. El 28-08 habia 820 asi repartidas por cuatro
-    versiones, todas de 27 KB, y nadie levanto en ningun sitio: se vieron
-    MIRANDO la pantalla.
-
-    La firma es la esquina. Este HTML pinta el fondo a #0b0c09 y encima el plano
-    escalado, asi que la esquina de un cuadro de verdad es oscura o es imagen;
-    la de la pagina de error es casi blanca. No se mira el peso: un plano
-    legitimamente plano pesa poco y seria un falso positivo.
-
-    Levanta y no borra el PNG: quien llama lo recoge como aviso (ver `ejecutar`)
-    y asi queda en disco para poder mirarlo si alguien pregunta por que.
+    Una esquina clara puede ser cielo, pared o papel. La firma se dibuja fuera
+    del cuadro, despues de cargar las imagenes; una pagina de error no la tiene.
     """
-    try:
-        from PIL import Image                                 # noqa: PLC0415
-        esquina = Image.open(destino).convert("RGB").load()[5, 5]
-    except Exception:                                         # noqa: BLE001
-        return
-    if min(esquina) > 200:
-        raise RuntimeError(
-            f"la previa salio en blanco ({esquina}): Edge ha fotografiado una "
-            f"pagina de error en vez del cuadro")
+    from PIL import Image                                     # noqa: PLC0415
+    ancho, alto = salida
+    with Image.open(destino) as captura:
+        if captura.size != (ancho, alto + 4):
+            raise RuntimeError("la previa tiene un tamaño de captura inesperado")
+        rgb = captura.convert("RGB")
+        for indice, esperado in enumerate(FIRMA_PREVIA):
+            actual = rgb.getpixel((indice * 4 + 1, alto + 1))
+            if any(abs(a - e) > 2 for a, e in zip(actual, esperado)):
+                raise RuntimeError("la previa no confirma la carga de la pagina "
+                                   "y sus imagenes; revisa el navegador y las rutas")
+        cuadro = captura.crop((0, 0, ancho, alto))
+    cuadro.save(destino)
 
 
 # ------------------------------------------------------------------ capturas

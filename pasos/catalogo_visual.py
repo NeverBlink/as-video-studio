@@ -318,7 +318,6 @@ Lee el guion ENTERO y devuelve su catalogo visual.
 TITULO: {titulo}
 TEMA: {tema}
 {peticion}
-{fijos}
 {especie}
 {criterio}
 

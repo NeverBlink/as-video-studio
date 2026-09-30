@@ -20,6 +20,7 @@ regenera sigue estando, y la version nueva es completa de verdad.
 import hashlib
 import importlib.util
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -1715,32 +1716,66 @@ def rasterizar(svg, destino, ancho, alto, transparente=True, espera_ms=1800):
     # los tres igual, asi que insistir no tapa un error de verdad -- solo
     # distingue "esto no se puede pintar" de "esta vez no salio".
     ultimo = ""
+    generado = False
     for intento in range(1, INTENTOS_RASTERIZAR + 1):
         perfil = tempfile.mkdtemp(prefix="edge_ras_")
+        # Un destino nuevo impide confundir una captura anterior con esta.
+        captura = os.path.join(perfil, "captura.png")
         orden = [edge(), "--headless", "--disable-gpu", "--no-first-run",
                  "--disable-extensions", "--hide-scrollbars",
                  f"--user-data-dir={perfil}",
-                 f"--screenshot={destino}",
+                 f"--screenshot={captura}",
                  f"--window-size={int(ancho)},{int(alto)}",
                  f"--virtual-time-budget={int(espera_ms)}"]
         if transparente:
             orden.append("--default-background-color=00000000")
-        orden.append("file:///" + ruta_svg.replace("\\", "/"))
+        orden.append(Path(ruta_svg).as_uri())
         try:
-            hecho = subprocess.run(orden, capture_output=True, timeout=180,
-                                   **SIN_VENTANA)
-            ultimo = (hecho.stderr or b"").decode("utf-8", "replace")[-300:]
-        except subprocess.TimeoutExpired:
-            ultimo = "Edge no contesto en 180 s"
+            # Chrome puede escribir el PNG y seguir vivo. Esperamos la imagen
+            # completa, no la salida del navegador; el fichero evita llenar PIPE.
+            from PIL import Image
+            with tempfile.TemporaryFile() as errores:
+                proceso = subprocess.Popen(orden, stdout=subprocess.DEVNULL,
+                                           stderr=errores, **SIN_VENTANA)
+                try:
+                    limite = time.monotonic() + 180
+                    while True:
+                        try:
+                            with Image.open(captura) as imagen:
+                                if imagen.size != (int(ancho), int(alto)):
+                                    raise ValueError("dimensiones inesperadas")
+                                imagen.verify()
+                            generado = True
+                            break
+                        except (OSError, ValueError, SyntaxError):
+                            pass  # PNG aun incompleto, o no producido.
+                        if proceso.poll() is not None or time.monotonic() >= limite:
+                            break
+                        time.sleep(0.1)
+                finally:
+                    if proceso.poll() is None:
+                        proceso.terminate()
+                        try:
+                            proceso.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            proceso.kill()
+                            proceso.wait(timeout=3)
+                    else:
+                        proceso.wait()
+                errores.seek(0, os.SEEK_END)
+                errores.seek(max(0, errores.tell() - 300))
+                ultimo = errores.read().decode("utf-8", "replace")
+            if generado:
+                shutil.copyfile(captura, destino)
         finally:
             shutil.rmtree(perfil, ignore_errors=True)
-        if os.path.exists(destino):
+        if generado:
             break
         if intento < INTENTOS_RASTERIZAR:
             time.sleep(ESPERA_RASTERIZAR_S)
     if temporal:
         os.unlink(temporal.name)
-    if not os.path.exists(destino):
+    if not generado:
         raise RuntimeError(
             f"Edge no genero {destino} en {INTENTOS_RASTERIZAR} intentos"
             + (f": {ultimo.strip()}" if ultimo.strip() else ""))
@@ -1770,4 +1805,3 @@ def duracion_media(ruta):
         return float(salida.stdout.strip())
     except ValueError:
         return 0.0
-

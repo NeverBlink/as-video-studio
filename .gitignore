@@ -21,6 +21,8 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.tools/
+.fuentes-local/
 venv/
 
 # Lo que dejan las pruebas cuando se cortan a medias

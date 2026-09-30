@@ -29,6 +29,9 @@ param(
 $ErrorActionPreference = 'Continue'
 Set-Location $PSScriptRoot
 
+# TEMP no viene definido en macOS. Usar el temporal nativo de .NET.
+if (-not $env:TEMP) { $env:TEMP = [System.IO.Path]::GetTempPath() }
+
 if (-not $Python) {
   $Python = (Get-Command python -ErrorAction SilentlyContinue).Source
 }
@@ -42,7 +45,7 @@ Write-Output ("interprete: {0}" -f $Python)
 # Edge zombi de otra tanda reteniendo un PNG dejaba la carpeta a medias y la
 # suite reventaba despues con un PermissionError dentro de shutil.rmtree, que no
 # se parece en nada a la causa.
-$sucio = "$env:TEMP\estudio_prueba_visual"
+$sucio = Join-Path $env:TEMP 'estudio_prueba_visual'
 Remove-Item -Recurse -Force $sucio -ErrorAction SilentlyContinue
 if (Test-Path $sucio) {
   Write-Output ("AVISO  no se ha podido borrar $sucio (algo lo tiene abierto): " +
@@ -65,6 +68,8 @@ $suites = @(
   'pasos\prueba_ajustes.py', 'pasos\prueba_login.py',
   'pasos\prueba_asistente.py', 'pasos\prueba_salud_cli.py',
   'pasos\prueba_enrutar_estilo.py',
+  'pasos/prueba_moodboard_referencias.py', 'pasos/prueba_firma_previa.py',
+  'pasos/prueba_catalogo_prompt.py', 'pasos/prueba_rasterizar_espera.py',
   'pasos\prueba_p1.py', 'pasos\prueba_p2.py', 'pasos\prueba_p3.py',
   'pasos\prueba_cta.py',
   'pasos\prueba_pasos_guion.py', 'pasos\prueba_marcas_tts.py',
@@ -77,6 +82,7 @@ $suites = @(
 
 $fallos = 0
 foreach ($s in $suites) {
+  $s = $s.Replace('\', '/')
   $salida = & $Python $s 2>&1 | Out-String
   if ($LASTEXITCODE -eq 0) {
     # El resumen es la ULTIMA linea con cifras: cada suite lo escribe a su
@@ -110,6 +116,7 @@ foreach ($h in @('herramientas\indefinidos_py.py', 'herramientas\indefinidos_js.
                  'herramientas\huerfanas_js.py', 'herramientas\sin_llamar_js.py',
                  'herramientas\alcanzables_js.py', 'herramientas\atributos_py.py',
                  'herramientas\css_sin_usar.py')) {
+  $h = $h.Replace('\', '/')
   if (-not (Test-Path $h)) { continue }
   $salida = & $Python $h 2>&1 | Out-String
   $resumen = ($salida -split "`n" | Where-Object { $_ -match ':|NO |NADIE|SOSPECHOSAS' } | Select-Object -First 1)
