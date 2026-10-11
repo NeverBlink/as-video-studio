@@ -111,6 +111,20 @@ MUESTRAS_MINIMAS = 3
 #: MAS rapida que 'normal', que es la cuenta al reves.
 PALABRAS_MINIMAS_MEDIDA = 60
 
+#: DOS TOMAS LARGAS QUE DICEN LO MISMO YA SON UNA MEDIDA. Las tres muestras de
+#: arriba protegen de la toma rara --dos frases, una voz que se atasco--, y esa
+#: rareza se ve: una toma corta no mide nada y dos tomas que discrepan no se
+#: ponen de acuerdo. Lo que no protegen es de esperar un tercer video para creer
+#: lo que ya esta medido. Paso con la voz de un canal en dos videos largos
+#: seguidos: unas 2.760 palabras cada uno a 'fast', 3,340 y 3,327 palabras/s
+#: -- un 0,4 % de diferencia sobre casi catorce minutos por toma -- y el sistema
+#: seguia con la media del idioma porque eran dos y no tres.
+#:
+#: Asi que una voz cuenta como medida con MUESTRAS_MINIMAS tomas cualesquiera
+#: (lo de siempre) o con DOS que sean LARGAS y coincidan dentro de ACUERDO_TOMAS.
+PALABRAS_TOMA_LARGA = 1000
+ACUERDO_TOMAS = 0.03
+
 
 # --------------------------------------------------------------- velocidad
 
@@ -166,11 +180,48 @@ def cadencia_medida(idioma=None, voz=None):
     del idioma es prometer una duracion que ninguna de las dos va a dar.
 
     Asi que primero se buscan tomas de ESTA voz; si no hay suficientes, las del
-    idioma; y si tampoco, la tabla escrita.
+    idioma; y si tampoco, la tabla escrita. Suficientes son MUESTRAS_MINIMAS
+    cualesquiera, o dos LARGAS que coincidan (ver ACUERDO_TOMAS).
 
     Solo cuentan las tomas no simuladas --el simulado escribe silencio del largo
     que dice este mismo modulo, asi que seria medirse a uno mismo-- y solo las
     que tengan palabras suficientes (ver PALABRAS_MINIMAS_MEDIDA).
+    """
+    tomas = _tomas(idioma, voz)
+    if tomas is None:
+        return None
+    de_la_voz, del_idioma = tomas
+    if _voz_medida(de_la_voz):
+        return _mediana([valor for valor, _palabras in de_la_voz])
+    valores = [valor for valor, _palabras in del_idioma]
+    if len(valores) < MUESTRAS_MINIMAS:
+        return None
+    return _mediana(valores)
+
+
+def voz_medida(idioma=None, voz=None):
+    """Si la cadencia de ESTA voz sale de sus propias tomas. -> ficha o None
+
+    Es la pregunta que hace el brief para decidir cuanta holgura dar a la
+    duracion: con la voz medida, lo que dura un guion se sabe al 1 %, y dejarle
+    un 30 % de margen es invitar a un video de diez minutos cuando se pidieron
+    catorce. Con la del idioma (o la tabla) no se sabe, y el margen ancho es
+    honesto. Ver `p2_brief.TOLERANCIA_VOZ_MEDIDA`.
+
+    Devuelve {palabras_s, tomas} a velocidad 'normal', o None.
+    """
+    tomas = _tomas(idioma, voz)
+    if tomas is None or not _voz_medida(tomas[0]):
+        return None
+    valores = [valor for valor, _palabras in tomas[0]]
+    return {"palabras_s": round(_mediana(valores), 3), "tomas": len(valores)}
+
+
+def _tomas(idioma=None, voz=None):
+    """Las tomas reales que valen para medir. -> ([de la voz], [del idioma])
+
+    Cada toma es (palabras/s devueltas a 'normal', palabras). None si no se
+    puede leer el historial. Ver `cadencia_medida` para que cuenta y que no.
     """
     try:
         registros = estadisticas.historial("voz", solo_ok=True)
@@ -187,9 +238,10 @@ def cadencia_medida(idioma=None, voz=None):
         if not cadencia:
             continue
         try:
-            if int(registro.get("tamano") or 0) < PALABRAS_MINIMAS_MEDIDA:
-                continue
+            palabras = int(registro.get("tamano") or 0)
         except (TypeError, ValueError):
+            continue
+        if palabras < PALABRAS_MINIMAS_MEDIDA:
             continue
         try:
             valor = float(cadencia) * factor_velocidad(detalle.get("velocidad"))
@@ -198,13 +250,24 @@ def cadencia_medida(idioma=None, voz=None):
         if valor <= 0:
             continue
         if quien and str(detalle.get("voz_id") or "") == quien:
-            de_la_voz.append(valor)
+            de_la_voz.append((valor, palabras))
         if not codigo or _idioma(registro.get("idioma")
                                  or detalle.get("idioma")) == codigo:
-            del_idioma.append(valor)
-    valores = de_la_voz if len(de_la_voz) >= MUESTRAS_MINIMAS else del_idioma
-    if len(valores) < MUESTRAS_MINIMAS:
-        return None
+            del_idioma.append((valor, palabras))
+    return de_la_voz, del_idioma
+
+
+def _voz_medida(tomas):
+    """Si esas tomas de UNA voz bastan para creerselas. Ver ACUERDO_TOMAS."""
+    if len(tomas) >= MUESTRAS_MINIMAS:
+        return True
+    largas = [valor for valor, palabras in tomas if palabras >= PALABRAS_TOMA_LARGA]
+    if len(largas) < 2:
+        return False
+    return (max(largas) - min(largas)) / max(largas) <= ACUERDO_TOMAS
+
+
+def _mediana(valores):
     ordenados = sorted(valores)
     mitad = len(ordenados) // 2
     if len(ordenados) % 2:

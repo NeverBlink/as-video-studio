@@ -220,6 +220,25 @@ def prueba_canal(guion, estilo, voz):
           "un canal aplica de golpe lo de los tres")
     ok("estilo" in cambios["assets"] and "min_s" in cambios["assets"],
        "y lo de dos claves distintas sobre el mismo paso se suma, no se pisa")
+    # LA VOZ DEL CANAL LLEGA AL BRIEF. Un video largo (28-09-2026) conto las
+    # palabras para 'normal' y «voz sin elegir» porque desde un canal la voz es
+    # un bloque HERMANO del guion y la rama de guion no la veia: pidio 2.286
+    # palabras para 14 minutos donde con su voz cabian 2.747.
+    igual({c: cambios["brief"].get(c) for c in ("velocidad", "hueco_minimo", "voz_id")},
+          {"velocidad": "slow", "hueco_minimo": 1.2, "voz_id": "abc-123"},
+          "la voz del canal llega tambien al brief: cuenta las palabras para "
+          "la voz que despues las dice")
+    igual(cambios["voz"]["velocidad"], cambios["brief"]["velocidad"],
+          "y es el MISMO valor en los dos pasos")
+    igual(cambios["brief"]["instrucciones"], "sin tecnicismos",
+          "sin quitarle al brief lo que le pone el bloque de guion")
+    sin_voz = presets.guardar("canal", "Canal sin voz",
+                              {"guion": presets.leer(guion["id"])["datos"]})
+    del_brief = presets.cambios_para(presets.leer(sin_voz["id"]))["brief"]
+    igual([c for c in ("velocidad", "hueco_minimo", "voz_id") if c in del_brief], [],
+          "un canal sin voz no se inventa una para el brief")
+    presets.apartar(sin_voz["id"])
+    presets.borrar(sin_voz["id"], confirmar=True)
     propio = presets.carpeta_de(ficha["id"])
     ok(all(r.startswith(propio) for r in presets.leer(ficha["id"])["datos"]["estilo"]["referencias"]),
        "el estilo de dentro de un canal tiene su propia copia de los fotogramas")

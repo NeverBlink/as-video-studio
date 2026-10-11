@@ -15,7 +15,8 @@ Duracion y horquilla
 La duracion objetivo no es una cifra exacta: se admite un margen de +-30%. Un
 guion de locucion no se puede clavar al segundo, y perseguir la cifra exacta
 produce guiones estirados o mutilados; lo que importa es caer dentro de la
-horquilla.
+horquilla. Con la voz MEDIDA --sus propias tomas dicen cuanto tarda-- el margen
+se estrecha al +-10 % (TOLERANCIA_VOZ_MEDIDA): ahi ya no hay nada que adivinar.
 
 El unico suelo es TECNICO (DURACION_MINIMA_S): lo justo para que haya algo que
 segmentar. Aqui hubo un minimo de 10 minutos, que era linea editorial disfrazada
@@ -103,6 +104,20 @@ PALABRAS_POR_SEGUNDO_OTROS = cadencia.CADENCIA_OTROS
 DURACION_MINIMA_S = 10
 DURACION_MAXIMA_S = 7200
 TOLERANCIA_MAXIMA = 0.30    # +-30%
+
+#: Y LA HOLGURA CUANDO LA VOZ ESTA MEDIDA (`cadencia.voz_medida`), que es otra
+#: cosa: el +-30 % existe porque no se sabe cuanto va a durar lo escrito, y con
+#: las tomas de esa voz delante SI se sabe. Medido en un video largo del canal
+#: (28-09-2026), con la voz que lo locuto: la cuenta con su voz daba 2.747
+#: palabras para 840 s, el guion tuvo 2.730 y la toma duro 841,9 s. Un 30 % de
+#: margen ahi es aceptar de antemano un video entre 9:48 y 18:12 para una
+#: peticion de 14:00; con un 10 % son 12:36 a 15:24, y sigue dejando al redactor
+#: sitio para no contar palabras una a una (que es lo que estira o mutila un
+#: guion).
+#:
+#: Solo ESTRECHA: si alguien pidio menos holgura que esto en `tolerancia`, manda
+#: la suya. Las voces sin tomas siguen con la de siempre.
+TOLERANCIA_VOZ_MEDIDA = 0.10
 
 NOMBRES_IDIOMA = {
     "es": "espanol", "en": "ingles", "pt": "portugues", "fr": "frances",
@@ -201,12 +216,20 @@ def horquilla_de(duracion_s, idioma, tolerancia=TOLERANCIA_MAXIMA,
     Y con los SEGUNDOS de vuelta en los dos extremos, que es lo que permite
     decirle a quien pide la duracion cuanto se puede desviar de verdad: la
     horquilla es de palabras, pero lo que se pidio son segundos.
+
+    CON LA VOZ MEDIDA, LA HORQUILLA SE ESTRECHA (ver TOLERANCIA_VOZ_MEDIDA). Va
+    aqui y no en `ejecutar` porque de aqui beben el brief Y la estimacion de la
+    pantalla de crear video (`/api/estimacion`): acotarlo en uno solo seria
+    ensenar una horquilla y pedir otra.
     """
     ficha = cadencia.palabras_para(duracion_s, normalizar_idioma(idioma),
                                    velocidad, hueco_minimo, palabras_por_bloque,
                                    voz)
     presupuesto = ficha["palabras"]
     holgura = max(0.0, min(float(tolerancia), TOLERANCIA_MAXIMA))
+    medida = cadencia.voz_medida(normalizar_idioma(idioma), voz) if voz else None
+    if medida:
+        holgura = min(holgura, TOLERANCIA_VOZ_MEDIDA)
     minimo = int(round(presupuesto * (1.0 - holgura)))
     maximo = int(round(presupuesto * (1.0 + holgura)))
     return {
@@ -226,6 +249,9 @@ def horquilla_de(duracion_s, idioma, tolerancia=TOLERANCIA_MAXIMA,
             maximo, normalizar_idioma(idioma), velocidad, hueco_minimo,
             palabras_por_bloque, voz),
         "tolerancia": holgura,
+        # cuantas tomas de ESTA voz respaldan la horquilla estrecha; 0 = la
+        # cadencia es la del idioma o la de la tabla, y el margen es el ancho
+        "tomas_de_la_voz": (medida or {}).get("tomas", 0),
     }
 
 
@@ -489,9 +515,12 @@ def ejecutar(proyecto, params, avisar):
         "presupuesto_palabras": horquilla["presupuesto_palabras"],
         "palabras_minimo": horquilla["palabras_minimo"],
         "palabras_maximo": horquilla["palabras_maximo"],
+        # la holgura que se ha APLICADO, no la pedida: con la voz medida es
+        # mas estrecha (TOLERANCIA_VOZ_MEDIDA) y el guionista tiene que ver esa
         "margen": {"minimo": horquilla["palabras_minimo"],
                    "maximo": horquilla["palabras_maximo"],
-                   "tolerancia": opciones["tolerancia"]},
+                   "tolerancia": horquilla["tolerancia"]},
+        "tomas_de_la_voz": horquilla["tomas_de_la_voz"],
         "bloques_estimados": max(1, int(round(horquilla["presupuesto_palabras"]
                                               / opciones["palabras_por_bloque"]))),
         "palabras_por_bloque": opciones["palabras_por_bloque"],
@@ -524,6 +553,10 @@ def ejecutar(proyecto, params, avisar):
                     f"{brief['idioma_salida_nombre']} -> entre "
                     f"{horquilla['palabras_minimo']} y {horquilla['palabras_maximo']} "
                     f"palabras (objetivo {horquilla['presupuesto_palabras']})"
+                    + (f", +-{int(round(horquilla['tolerancia'] * 100))} % "
+                       f"porque esta voz esta medida en "
+                       f"{horquilla['tomas_de_la_voz']} tomas"
+                       if horquilla["tomas_de_la_voz"] else "")
                     + (f"; {len(avisos)} aviso(s)" if avisos else "")),
     }
     estadisticas.anotar(PASO, time.time() - arranque,

@@ -954,6 +954,32 @@ def cambios_para(ficha, params_actuales=None):
             parcial = cambios_para({"tipo": sub, "datos": datos[sub]}, actuales)
             for paso, valores in parcial.items():
                 cambios.setdefault(paso, {}).update(valores)
+        # LA VOZ DEL CANAL TAMBIEN VA AL BRIEF, y aqui es donde se perdia.
+        #
+        # La rama `guion` de abajo la copia leyendo `datos["voz"]` de SU ficha,
+        # pero desde un canal esa ficha es solo el bloque `guion`: la voz es un
+        # bloque hermano y no llegaba nunca. Y como aqui todo video nace de un
+        # estilo de canal, pasaba en todos. Visto en un video largo (28-09-2026):
+        # el canal locuta a 'fast' con 0,5 s de aire, y el brief conto las
+        # palabras para 'normal', 1,0 s y «voz sin elegir». Pidio 2.286 palabras
+        # para 14 minutos cuando con esa voz caben 2.747 --el guion final tuvo
+        # 2.730 y la toma duro 841,9 s, o sea que la cuenta buena acertaba al
+        # 1 %--. Los avisos del brief lo decian (`p2_brief._avisos_de_voz`), y
+        # nadie los lee.
+        #
+        # SOLO AL CREAR EL VIDEO, por las firmas. Son params del brief, y la firma
+        # del brief encadena la del guion, la de la voz y la de todo lo de abajo:
+        # escribirlos en un video ya hecho lo dejaria obsoleto entero, imagenes
+        # pagadas incluidas. Hoy no puede pasar: quien aplica un canal es
+        # `crear_video_light` (app.py), sobre un proyecto recien creado cuyo brief
+        # no ha corrido nunca, y los videos que ya existen se quedan con lo que
+        # tenian. La ruta `/presets-canal/{id}/aplicar` sigue existiendo y la
+        # pantalla no la usa; el dia que vuelva a aplicar un estilo sobre un
+        # video hecho, esto le movera el brief, y eso hay que decidirlo antes.
+        voz = datos.get("voz") or {}
+        for clave in ("velocidad", "hueco_minimo", "voz_id"):
+            if voz.get(clave) not in (None, ""):
+                cambios.setdefault("brief", {})[clave] = copy.deepcopy(voz[clave])
         return cambios
 
     if tipo == "guion":
@@ -975,6 +1001,9 @@ def cambios_para(ficha, params_actuales=None):
         # voces inglesas con el mismo modelo dan 2,553 y 1,91 palabras/s a
         # velocidad normal, un 25 % de diferencia. Sin el, cambiar de voz dejaba
         # el presupuesto de palabras igual y la toma duraba otra cosa.
+        #
+        # Desde un CANAL no llega por aqui: esta ficha es solo su bloque `guion`
+        # y la voz es un bloque hermano. Esa copia la hace la rama `canal`.
         voz = (ficha.get("datos") or {}).get("voz") or {}
         for clave in ("velocidad", "hueco_minimo", "voz_id"):
             if voz.get(clave) not in (None, ""):

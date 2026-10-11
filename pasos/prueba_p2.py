@@ -264,6 +264,89 @@ def prueba_con_ingesta(base):
     igual(estado.estado_de("brief"), "obsoleto", "cambiar el brief lo deja obsoleto")
 
 
+def prueba_voz_medida(base):
+    """Con la voz medida la horquilla se estrecha (28-09-2026, un video largo).
+
+    El caso: la voz del canal tenia dos tomas de unas 2.760 palabras que
+    coincidian al 0,4 %, la cuenta con su voz acerto al 1 %, y aun asi el brief
+    ofrecia un +-30 % -- un video de 9:48 a 18:12 para una peticion de 14:00 --.
+
+    Va la ULTIMA a proposito: escribe tomas en el historico de la prueba, y las
+    secciones de arriba cuentan con que en castellano no hay ninguna.
+    """
+    print("\n[6] la voz medida estrecha la horquilla")
+    import estadisticas                                        # noqa: PLC0415
+
+    def toma(voz, cadencia, palabras=2760):
+        estadisticas.anotar("voz", 830.0, tamano=palabras, idioma="es",
+                            detalle={"voz_id": voz, "velocidad": "fast",
+                                     "cadencia_palabras_s": cadencia})
+
+    # las dos tomas largas de la voz del canal: 3,340 y 3,327 palabras/s
+    toma("voz-del-canal", 3.34)
+    toma("voz-del-canal", 3.327)
+    ancha = p2_brief.horquilla_de(840, "es", 0.30, "fast", 0.5, 30, "voz-sin-tomas")
+    estrecha = p2_brief.horquilla_de(840, "es", 0.30, "fast", 0.5, 30, "voz-del-canal")
+    igual(ancha["tolerancia"], 0.30, "una voz sin tomas sigue con el +-30 %")
+    igual(ancha["tomas_de_la_voz"], 0, "y dice que no hay tomas suyas")
+    igual(estrecha["tolerancia"], p2_brief.TOLERANCIA_VOZ_MEDIDA,
+          "dos tomas LARGAS que coinciden bastan para estrechar la horquilla")
+    igual(estrecha["tomas_de_la_voz"], 2, "y se dice con cuantas tomas")
+    # 3,3335 pal/s a 'fast' (la media de las dos) x 840 s; con 0,5 s de hueco
+    # no se inserta aire, porque la pausa natural entre bloques ya es mayor
+    igual(estrecha["presupuesto_palabras"], 2800,
+          "el presupuesto sale de SU cadencia, no de la del idioma")
+    comprobar(estrecha["palabras_maximo"] - estrecha["palabras_minimo"]
+              < (ancha["palabras_maximo"] - ancha["palabras_minimo"]) / 2,
+              "la horquilla medida es mucho mas estrecha que la de siempre")
+    igual(p2_brief.horquilla_de(840, "es", 0.05, "fast", 0.5, 30,
+                                "voz-del-canal")["tolerancia"], 0.05,
+          "si se pidio menos holgura que la de la voz medida, manda la pedida")
+
+    # LO QUE GUARDA EL BRIEF: la holgura APLICADA, no la pedida. Es la que lee
+    # el guionista (`p3_guion._horquilla` va al margen) y la que se ensena.
+    proyecto = Proyecto.crear(base, "Brief Con Voz Medida")
+    salidas = p2_brief.ejecutar(proyecto, {
+        "instrucciones": "un video largo contado con la voz del canal",
+        "idioma_salida": "es", "duracion_objetivo_s": 840,
+        "velocidad": "fast", "hueco_minimo": 0.5,
+        "voz_id": "voz-del-canal"}, sin_progreso)
+    brief = salidas["brief"]
+    igual(brief["margen"]["tolerancia"], p2_brief.TOLERANCIA_VOZ_MEDIDA,
+          "el margen del brief lleva la holgura aplicada, no el 30 % pedido")
+    igual(brief["tomas_de_la_voz"], 2, "y el brief dice cuantas tomas la respaldan")
+    igual([brief["palabras_minimo"], brief["palabras_maximo"]], [2520, 3080],
+          "14 minutos con esa voz son 2.520-3.080 palabras, no 1.960-3.640")
+    comprobar("medida en 2 tomas" in salidas["resumen"],
+              f"y el resumen dice por que es tan estrecha: {salidas['resumen']}")
+    with open(os.path.join(proyecto.ruta_trabajo("brief", crear=False), "brief.txt"),
+              "r", encoding="utf-8") as fh:
+        comprobar("(+-10%)" in fh.read(),
+                  "el brief en texto que lee el guionista dice +-10 %, no +-30 %")
+    sin_tomas = p2_brief.ejecutar(Proyecto.crear(base, "Brief Voz Sin Tomas"), {
+        "instrucciones": "el mismo video con una voz que nadie ha medido",
+        "idioma_salida": "es", "duracion_objetivo_s": 840,
+        "velocidad": "fast", "hueco_minimo": 0.5,
+        "voz_id": "voz-sin-tomas"}, sin_progreso)["brief"]
+    igual([sin_tomas["margen"]["tolerancia"], sin_tomas["tomas_de_la_voz"]], [0.30, 0],
+          "con una voz sin tomas el brief sigue con el +-30 % y cero tomas")
+
+    toma("voz-dudosa", 3.0)
+    toma("voz-dudosa", 3.4)
+    igual(p2_brief.horquilla_de(840, "es", 0.30, "fast", 0.5, 30,
+                                "voz-dudosa")["tolerancia"], 0.30,
+          "dos tomas que no se ponen de acuerdo no son una medida")
+    toma("voz-corta", 3.30, palabras=200)
+    toma("voz-corta", 3.31, palabras=200)
+    igual(p2_brief.horquilla_de(840, "es", 0.30, "fast", 0.5, 30,
+                                "voz-corta")["tolerancia"], 0.30,
+          "dos tomas CORTAS tampoco: con tres cualesquiera si, como siempre")
+    toma("voz-corta", 3.29, palabras=200)
+    igual(p2_brief.horquilla_de(840, "es", 0.30, "fast", 0.5, 30,
+                                "voz-corta")["tomas_de_la_voz"], 3,
+          "a la tercera toma cuenta como medida, sea larga o no")
+
+
 def principal():
     base = tempfile.mkdtemp(prefix="prueba_p2_")
     # el historico de tiempos de verdad no se toca: aqui los pasos corren
@@ -275,6 +358,7 @@ def principal():
         prueba_params()
         prueba_sin_ingesta(base)
         prueba_con_ingesta(base)
+        prueba_voz_medida(base)
     finally:
         if conservar:
             print(f"\nproyectos temporales conservados en {base}")
