@@ -31,8 +31,8 @@ function verifyCsrf(req, res, next) {
   //
   // UNO NO BASTA: EL SITIO TIENE VARIOS NOMBRES. Se comparaba contra `appUrl` y
   // nada mas, asi que al darle un dominio propio al servidor entrar por el
-  // devolvia «Origen no permitido» -- la peticion venia de studiovideo.cloud y
-  // aqui solo valia srv1944562.hstgr.cloud, que es el nombre de la maquina.
+  // devolvia «Origen no permitido» -- la peticion venia del dominio propio y
+  // aqui solo valia srvNNNNNNN.hstgr.cloud, que es el nombre de la maquina.
   //
   // Se comprueba contra una LISTA declarada (config.origenes), no contra el
   // Host de la peticion: el Host lo pone quien llama, asi que aceptarlo sin

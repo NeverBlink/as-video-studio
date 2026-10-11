@@ -42,6 +42,7 @@ llama, el historico se queda ciego justo en la variable que mas mueve el tiempo.
 import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 
@@ -587,9 +588,17 @@ def matar_arbol(proceso):
     """
     # esto es limpieza: si taskkill no esta, no puede o falla, lo que importa
     # sigue siendo el error que provoco la limpieza, no el de matar
+    #
+    # EN LINUX NO HAY TASKKILL, y matar solo el node del CLI dejaba sueltos sus
+    # hijos (el servidor MCP del asistente, una herramienta a medias). Alli el
+    # CLI va en su propio grupo de procesos (`_una_pasada_cruda`) y se mata el
+    # grupo entero.
     try:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proceso.pid)],
-                       capture_output=True, timeout=30, **SIN_VENTANA)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proceso.pid)],
+                           capture_output=True, timeout=30, **SIN_VENTANA)
+        else:
+            os.killpg(proceso.pid, signal.SIGKILL)
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -731,10 +740,14 @@ def _una_pasada_cruda(instruccion, modelo, esfuerzo, cwd, tiempo_max_s, base_tie
                             permisos=permisos, extra=extra,
                             herramientas_permitidas=herramientas_permitidas)
     try:
+        # en Linux, en su propio grupo de procesos: es lo que deja a
+        # `matar_arbol` cerrar tambien sus hijos
+        grupo = {} if os.name == "nt" else {"start_new_session": True}
         proceso = subprocess.Popen(orden, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE,
-                                   cwd=cwd, env=entorno(cuenta), **SIN_VENTANA)
+                                   cwd=cwd, env=entorno(cuenta), **SIN_VENTANA,
+                                   **grupo)
     except OSError as fallo:
         raise RuntimeError(
             f"no se ha podido lanzar el CLI de claude: {fallo}") from fallo

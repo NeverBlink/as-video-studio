@@ -297,8 +297,7 @@ def aviso_de_idioma(anterior, nuevo, calidad="medium"):
     imagenes = imagenes_de_parte("estilo")
     if not imagenes:
         return ""
-    por_imagen = USD_POR_IMAGEN.get(str(calidad or "medium"),
-                                    USD_POR_IMAGEN["medium"])
+    por_imagen = usd_por_imagen(calidad or "medium")
     return AVISO_LAMINAS_EN_OTRO_IDIOMA.format(
         anterior=_NOMBRES_LLANOS.get(anterior, anterior),
         nuevo=_NOMBRES_LLANOS.get(nuevo, nuevo),
@@ -376,14 +375,34 @@ def ritmo_de(id_ritmo):
         or RITMOS_POR_ID[RITMO_POR_DEFECTO]
 
 
-#: LO QUE CUESTA UNA IMAGEN, MEDIDO. No sale de la tabla de tarifas sino del
-#: registro real (`coste_global.jsonl`): de las ultimas 120 imagenes de plano,
-#: ya con la tarifa por tokens puesta, salen 0,033 $ de media en calidad `low`.
-#: El grueso es la ENTRADA --unos 4.600 tokens por imagen entre la lamina de
-#: estilo, el reparto y la continuidad-- y no la imagen devuelta, que en `low`
-#: son seis milesimas. Por eso subir la calidad no multiplica el coste: le suma
-#: la diferencia de salida (0,041 y 0,165 $ segun tarifas.json).
-USD_POR_IMAGEN = {"low": 0.033, "medium": 0.074, "high": 0.198}
+#: LO QUE CUESTA UNA IMAGEN, MEDIDO: la imagen devuelta MAS lo adjuntado, que
+#: es el grueso (la mediana de 5.114 tokens de entrada por imagen sobre 1.439
+#: imagenes, ver `ajustes.TOKENS_ENTRADA_POR_IMAGEN`). La cuenta de verdad la
+#: hace `ajustes.coste_por_imagen` con las tarifas; esta tabla es solo el
+#: respaldo si no se pueden leer, con las mismas cifras.
+#:
+#: HABIA DOS PRECIOS. Aqui ponia 0,033 $ en `low` (una media de 120 imagenes
+#: con menos referencias) y Configuracion ensenaba 0,047 $: el plan de antes de
+#: generar prometia un 30 % menos de lo que se cobraba. Ahora los dos salen de
+#: `usd_por_imagen`.
+USD_POR_IMAGEN = {"low": 0.047, "medium": 0.082, "high": 0.206}
+
+
+def usd_por_imagen(calidad="low"):
+    """Lo que cuesta UNA imagen de plano a esa calidad, adjuntos incluidos. -> USD
+
+    La misma cuenta que ensena Configuracion (`ajustes.coste_por_imagen`): dos
+    cifras distintas para lo mismo es justo lo que no puede pasar con dinero.
+    """
+    calidad = str(calidad or "low").strip().lower()
+    if calidad not in USD_POR_IMAGEN:
+        calidad = "low"
+    try:
+        import ajustes                                      # noqa: PLC0415
+        total = float(ajustes.coste_por_imagen(calidad).get("usd_total") or 0.0)
+    except Exception:                                       # noqa: BLE001
+        total = 0.0
+    return total if total > 0 else USD_POR_IMAGEN[calidad]
 
 
 def coste_por_minuto(id_ritmo, calidad="low"):
@@ -395,7 +414,7 @@ def coste_por_minuto(id_ritmo, calidad="low"):
     dibujadas y las muestras): eso ya se dice al crearlo.
     """
     ficha = ritmo_de(id_ritmo)
-    por_imagen = USD_POR_IMAGEN.get(str(calidad or "low"), USD_POR_IMAGEN["low"])
+    por_imagen = usd_por_imagen(calidad or "low")
     return round((60.0 / max(0.5, float(ficha["media_s"]))) * por_imagen, 3)
 
 

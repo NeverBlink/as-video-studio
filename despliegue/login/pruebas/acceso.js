@@ -27,10 +27,10 @@ function igual(que, dio, esperaba) {
   console.log('-- la contrasena elige la cuenta');
   const cuentas = [
     { id: 1, username: 'adrian', password_hash: await hashPassword('llave-de-adrian-123') },
-    { id: 2, username: 'ramon',  password_hash: await hashPassword('llave-de-ramon-456') },
+    { id: 2, username: 'marta',  password_hash: await hashPassword('llave-de-marta-456') },
   ];
   igual('la de adrian', ((await elegirCuenta('llave-de-adrian-123', cuentas)) || {}).username, 'adrian');
-  igual('la de ramon',  ((await elegirCuenta('llave-de-ramon-456', cuentas)) || {}).username, 'ramon');
+  igual('la de marta',  ((await elegirCuenta('llave-de-marta-456', cuentas)) || {}).username, 'marta');
   igual('una que no es de nadie', await elegirCuenta('otra-cosa-distinta-789', cuentas), null);
   igual('vacia', await elegirCuenta('', cuentas), null);
   igual('casi (un caracter menos)', await elegirCuenta('llave-de-adrian-12', cuentas), null);
@@ -52,12 +52,12 @@ function igual(que, dio, esperaba) {
   igual('la primera por orden', ((await elegirCuenta('la-misma-llave-000', dobles)) || {}).username, 'primera');
 
   console.log('-- el enlace al panel de Hostinger');
-  igual('id normal', urlPanelHostinger('1944562'), 'https://hpanel.hostinger.com/vps/1944562/overview');
-  igual('id como numero', urlPanelHostinger(1944562), 'https://hpanel.hostinger.com/vps/1944562/overview');
-  igual('con espacios', urlPanelHostinger(' 1944562 '), 'https://hpanel.hostinger.com/vps/1944562/overview');
+  igual('id normal', urlPanelHostinger('1234567'), 'https://hpanel.hostinger.com/vps/1234567/overview');
+  igual('id como numero', urlPanelHostinger(1234567), 'https://hpanel.hostinger.com/vps/1234567/overview');
+  igual('con espacios', urlPanelHostinger(' 1234567 '), 'https://hpanel.hostinger.com/vps/1234567/overview');
   igual('vacio', urlPanelHostinger(''), '');
   igual('sin configurar', urlPanelHostinger(undefined), '');
-  igual('con letras', urlPanelHostinger('1944562/../otra'), '');
+  igual('con letras', urlPanelHostinger('1234567/../otra'), '');
   igual('demasiado largo', urlPanelHostinger('1'.repeat(13)), '');
 
   console.log(fallos ? `${fallos} FALLOS` : 'las 17 comprobaciones, bien');

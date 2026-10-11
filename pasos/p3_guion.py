@@ -314,11 +314,22 @@ def _reloj(segundos):
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
-def _transcript_legible(transcript, maximo):
-    """El transcript como lineas con marca de tiempo, recortado si no cabe."""
-    lineas = [f"[{_reloj(t.get('t_in', 0))}] {t.get('texto', '')}" for t in transcript]
-    texto, _ = comun.recortar("\n".join(lineas), maximo,
-                              "[...transcript recortado por longitud...]")
+def _transcript_legible(transcript, maximo, con_tiempos=True):
+    """El transcript como lineas con marca de tiempo, recortado si no cabe.
+
+    `con_tiempos=False` es el material ESCRITO (`p1_ingesta`, `sin_tiempos`):
+    sus parrafos no tienen tiempo, y ponerles a todos un [00:00] delante se lo
+    presentaba al guionista como la transcripcion de un video.
+    """
+    if con_tiempos:
+        lineas = [f"[{_reloj(t.get('t_in', 0))}] {t.get('texto', '')}"
+                  for t in transcript]
+        separador, que = "\n", "transcript"
+    else:
+        lineas = [str(t.get("texto", "")) for t in transcript]
+        separador, que = "\n\n", "material"
+    texto, _ = comun.recortar(separador.join(lineas), maximo,
+                              f"[...{que} recortado por longitud...]")
     return texto
 
 
@@ -432,6 +443,30 @@ def _instruccion(transcript, metadatos, brief, anterior, opciones, correcciones,
         regla_redaccion = REGLA_REDACCION_DOSIER
     else:
         regla_redaccion = REGLA_REDACCION
+    # EL MATERIAL ESCRITO SE PRESENTA COMO LO QUE ES. Este estudio no baja
+    # videos: el material es texto (`p1_ingesta`, `sin_tiempos`). Se le
+    # presentaba al guionista como «Video de referencia ... Duracion original:
+    # 0 s ... Transcripcion con marcas de tiempo», con todos los parrafos en
+    # [00:00]. Con tiempos de verdad (un proyecto traido de la otra version) se
+    # sigue presentando como antes.
+    escrito = bool(metadatos.get("sin_tiempos")) \
+        or metadatos.get("origen") == "escrito"
+    if escrito:
+        cabecera = [
+            f"Material escrito: {metadatos.get('titulo') or 'sin titulo'}",
+            f"{metadatos.get('palabras_transcript', 0)} palabras.",
+            "",
+            "El texto del material, por parrafos:",
+        ]
+    else:
+        cabecera = [
+            f"Video de referencia: {metadatos.get('titulo', 'sin titulo')}"
+            + (f" ({metadatos['canal']})" if metadatos.get("canal") else ""),
+            f"Duracion original: {int(float(metadatos.get('duracion_s') or 0))} s, "
+            f"{metadatos.get('palabras_transcript', 0)} palabras de transcript.",
+            "",
+            "Transcripcion con marcas de tiempo:",
+        ]
     partes = [
         "Eres el guionista de un canal de video documental. Escribes la "
         "narracion en off que se va a locutar: frases pensadas para el oido, "
@@ -439,13 +474,9 @@ def _instruccion(transcript, metadatos, brief, anterior, opciones, correcciones,
         "",
         ("== EL GUION QUE YA ESTA ESCRITO ==" if propio
          else "== MATERIAL DE PARTIDA (documentacion, NO texto para copiar) =="),
-        f"Video de referencia: {metadatos.get('titulo', 'sin titulo')}"
-        + (f" ({metadatos['canal']})" if metadatos.get("canal") else ""),
-        f"Duracion original: {int(float(metadatos.get('duracion_s') or 0))} s, "
-        f"{metadatos.get('palabras_transcript', 0)} palabras de transcript.",
-        "",
-        "Transcripcion con marcas de tiempo:",
-        _transcript_legible(transcript, opciones["max_caracteres_transcript"]),
+        *cabecera,
+        _transcript_legible(transcript, opciones["max_caracteres_transcript"],
+                            con_tiempos=not escrito),
     ]
 
     # EL VIDEO DE ORIGEN, ADEMAS DEL DOSIER Y ANTES DEL BRIEF.

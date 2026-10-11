@@ -33,3 +33,7 @@ despliegue/login/node_modules/
 despliegue/login/datos/
 node_modules/
 .claude/
+
+# NOTAS INTERNAS de quien lo desarrolla (estado, despliegues, cuentas): se
+# quedan en su maquina y no viajan en el repositorio publico.
+docs/RETOMAR.md

@@ -238,7 +238,8 @@ def prueba_con_ingesta(base):
     comprobar("pides 600s" in textos, f"avisa de que el objetivo dobla al original: {textos}")
     comprobar("supera al transcript" in textos, "avisa de que no hay material para tanto")
     comprobar("ingles" in textos and "espanol" in textos, "avisa del cambio de idioma")
-    comprobar("ningun frame util" in textos, "avisa de que no hay referencia visual")
+    comprobar("frame" not in textos,
+              "no avisa de fotogramas: el material es texto y salia en todos")
     igual(brief["referencia"]["palabras_transcript"], 700,
           "la referencia recoge las palabras del transcript")
 

@@ -14,9 +14,10 @@ CON QUE CONTEXTO CONTESTA, y por que asi
 Tres capas, de mas fija a mas viva:
 
 1. **La documentacion del producto**, entera y en el primer mensaje: CLAUDE.md,
-   README.md, docs/RETOMAR.md y docs/API.md. Son unas 45.000 letras y van una
-   sola vez por charla: los turnos siguientes REANUDAN la sesion del CLI
-   (`--resume`), que ya las tiene leidas.
+   README.md, INSTALAR.md y docs/API.md. Van una sola vez por charla: los
+   turnos siguientes REANUDAN la sesion del CLI (`--resume`), que ya las tiene
+   leidas. (Aqui iba tambien docs/RETOMAR.md, que eran notas internas de quien
+   lo desarrolla: ya no viaja en el repositorio publico.)
 2. **El codigo**, a demanda. El CLI corre con la carpeta del Estudio de trabajo
    y con Read, Grep y Glob permitidos, y nada mas: ni Bash, ni escribir, ni
    salir a internet. Asi «me ha dado este error» se resuelve buscando el texto
@@ -90,7 +91,7 @@ TIEMPO_MAX_S = 420
 
 #: Lo que se le da a leer en el primer turno, en este orden. Lo que no exista
 #: se salta sin avisar: un despliegue puede no llevar la carpeta docs/.
-DOCUMENTOS = ("CLAUDE.md", "README.md", "docs/RETOMAR.md", "docs/API.md")
+DOCUMENTOS = ("CLAUDE.md", "README.md", "INSTALAR.md", "docs/API.md")
 
 #: Lo que puede hacer ademas de contestar: LEER el codigo, y las herramientas
 #: del Estudio (pasos/mcp_estudio.py): probar las claves, ver el estado, los
@@ -208,6 +209,17 @@ def vetos_de_lectura(raiz=None):
         reglas.append(f"Read(./{carpeta}/**)")
         absoluta = os.path.join(raiz, carpeta).replace("\\", "/")
         reglas.append(f"Read(//{absoluta.lstrip('/')}/**)")
+    # Y LA CARPETA DE SECRETOS DE VERDAD, que no tiene por que estar dentro de
+    # la del Estudio. En el servidor no lo esta: el codigo vive en
+    # /opt/as-video-studio/app y las claves en /opt/as-video-studio/datos/
+    # secretos (`ESTUDIO_SECRETOS`, lo pone el instalador), asi que el veto de
+    # `<raiz>/secretos` no la alcanzaba y solo quedaban los vetos por nombre.
+    externa = (os.environ.get("ESTUDIO_SECRETOS") or "").strip()
+    if externa:
+        absoluta = os.path.abspath(externa).replace("\\", "/").rstrip("/")
+        regla = f"Read(//{absoluta.lstrip('/')}/**)"
+        if regla not in reglas:
+            reglas.append(regla)
     for fichero in FICHEROS_VETADOS:
         reglas.append(f"Read({fichero})")
     return reglas

@@ -10,7 +10,7 @@ de servidores: se pega una línea y se espera.
 
 | Qué | Para qué | Cuánto cuesta |
 |---|---|---|
-| **Un VPS con Ubuntu 22.04 o 24.04** | la máquina donde vive el estudio | desde ~7 €/mes |
+| **Un VPS con Ubuntu 24.04** | la máquina donde vive el estudio | desde ~7 €/mes |
 | **Una cuenta de Claude** (Pro o Max) | escribe el guion y los rótulos | tu suscripción, sin coste extra por vídeo |
 | **Una clave de OpenAI** | dibuja las imágenes | se paga por imagen (abajo) |
 | **Una clave de Cartesia** | pone la voz | plan gratuito para empezar |
@@ -26,7 +26,9 @@ minutos son unas 126 imágenes, y en calidad baja salen por **unos 4,4 $**. El
 estudio enseña el coste en pantalla antes y durante, y la calidad se elige en
 Configuración.
 
-> Ubuntu 24.04 es lo probado. Si tu panel te deja elegir, elige eso.
+> **Tiene que ser Ubuntu 24.04.** Con 22.04 la instalación no puede terminar
+> (su Python es demasiado viejo), y el instalador te lo dice nada más empezar.
+> Si tu VPS tiene otro sistema, en el panel se reinstala eligiendo Ubuntu 24.04.
 
 ---
 

@@ -135,9 +135,19 @@ scp -r . root@IP:/root/asvs-prueba
 ssh root@IP "cd /root/asvs-prueba && bash instalar.sh"
 ```
 
-## Lo único del código que la aplicación reescribe
+## Las reglas de dibujo se actualizan como el resto del código
 
-`motores/reglas/reglas.json` — las reglas de dibujo que el destilador aprende de
-tu feedback. Viaja una por defecto en el repositorio, pero **el instalador y
-`asvs actualizar` la excluyen si ya existe**: si no, cada actualización borraría
-lo que ha aprendido tu estudio, en silencio y sin forma de recuperarlo.
+`motores/reglas/reglas_casa.json` — las reglas de dibujo que van en cada prompt
+de imagen. Hasta octubre de 2026 se llamaban `reglas.json` y el instalador y
+`asvs actualizar` las excluían «porque el destilador las reescribe»; pero en
+este estudio no hay destilador y nadie las reescribe, así que lo único que
+conseguía la exclusión era que ninguna regla nueva llegara nunca a un estudio ya
+instalado. Ahora van con el resto del código, y con otro nombre para que lleguen
+también con el `asvs actualizar` de las instalaciones viejas (que excluye el
+nombre antiguo). El `reglas.json` que quede en esas máquinas ya no lo lee nadie.
+
+`asvs actualizar` pone al día además lo que el instalador deja fuera de `app/`:
+el envoltorio del navegador (`/usr/local/bin/estudio-edge`, con el mismo
+navegador que ya había), las dos unidades de systemd y los trozos de nginx. El
+sitio de nginx no lo toca, porque lleva el dominio y los puertos de esa máquina.
+Si algo falla a mitad, vuelve a arrancar el estudio igualmente.

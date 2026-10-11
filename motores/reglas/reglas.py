@@ -21,7 +21,13 @@ import json
 import os
 from datetime import date
 
-RUTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reglas.json")
+#: LAS REGLAS DE LA CASA, con otro nombre a proposito. Se llamaban reglas.json,
+#: y las instalaciones hechas antes de octubre de 2026 tienen un `asvs
+#: actualizar` que excluye ESE nombre (de cuando un destilador lo reescribia).
+#: Con el nombre de siempre, ninguna regla nueva --la de las caras, por ejemplo--
+#: llegaria nunca a esos estudios; con este, llega en la primera actualizacion.
+#: El reglas.json viejo que se quede en el disco ya no lo lee nadie.
+RUTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reglas_casa.json")
 
 AMBITOS = ("prompt_imagen", "referencias", "reparto", "blockout",
            "plan_escenas", "storyboard", "montaje", "voz")

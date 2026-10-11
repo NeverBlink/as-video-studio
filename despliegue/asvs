@@ -85,35 +85,65 @@ reiniciar() {
 }
 
 actualizar() {
-  local temporal
+  local temporal codigo navegador
   temporal="$(mktemp -d)"
+  codigo="$temporal/codigo"
+  mkdir -p "$codigo"
   echo "Bajando la ultima version de $REPO ($RAMA)..."
+  # El paquete se baja FUERA de la carpeta que se copia: dentro, el rsync de
+  # abajo lo dejaba tirado en app/ en cada actualizacion.
   curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$RAMA" -o "$temporal/c.tgz"
-  tar -xzf "$temporal/c.tgz" -C "$temporal" --strip-components=1
-  [ -f "$temporal/app.py" ] || { echo "lo bajado no es el estudio"; rm -rf "$temporal"; exit 1; }
+  tar -xzf "$temporal/c.tgz" -C "$codigo" --strip-components=1
+  [ -f "$codigo/app.py" ] || { echo "lo bajado no es el estudio"; rm -rf "$temporal"; exit 1; }
 
   # Se para antes de tocar nada: cambiar el codigo por debajo de una tanda que
-  # esta corriendo es la forma mas rapida de perderla.
+  # esta corriendo es la forma mas rapida de perderla. Y PASE LO QUE PASE SE
+  # VUELVE A ARRANCAR: con `set -e`, un fallo a mitad (pip sin red, por
+  # ejemplo) dejaba el estudio parado hasta que alguien entrara a mirar.
   systemctl stop as-video-studio
-  # reglas.json va excluido a proposito: es lo unico del arbol de codigo que la
-  # aplicacion reescribe (el destilador aprende de tu feedback y lo guarda ahi).
-  # Sin excluirlo, actualizar borraria lo aprendido sin decir nada.
+  trap 'systemctl start as-video-login as-video-studio >/dev/null 2>&1 || true; rm -rf "$temporal"' EXIT
+
+  # TODO el arbol de codigo, reglas de dibujo incluidas. Antes se excluia
+  # motores/reglas/reglas.json porque «la aplicacion lo reescribe», pero aqui
+  # no lo reescribe nadie (no hay destilador), y excluirlo hacia que ninguna
+  # regla nueva --la de las caras, por ejemplo-- llegara nunca a un estudio ya
+  # instalado. Por eso ahora se llaman reglas_casa.json (ver motores/reglas/
+  # reglas.py): asi llegan tambien con el `asvs actualizar` de antes, que es el
+  # que corre la primera vez. Los datos viven fuera de app/ y no se tocan.
   rsync -a --delete --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
     --exclude='cache/' --exclude='proyectos/' --exclude='banco/' --exclude='secretos/' \
-    --exclude='motores/reglas/reglas.json' \
-    "$temporal/" "$RAIZ/app/"
-  [ -f "$RAIZ/app/motores/reglas/reglas.json" ] \
-    || cp "$temporal/motores/reglas/reglas.json" "$RAIZ/app/motores/reglas/reglas.json"
+    "$codigo/" "$RAIZ/app/"
   rsync -a --delete --exclude='node_modules' --exclude='datos' --exclude='.env' \
     "$RAIZ/app/despliegue/login/" "$RAIZ/login/"
   ( cd "$RAIZ/login" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 ) || true
   "$RAIZ/venv/bin/pip" install --quiet -r "$RAIZ/app/requirements.txt"
   install -m 755 "$RAIZ/app/despliegue/asvs" /usr/local/bin/asvs
   install -m 755 "$RAIZ/app/despliegue/estudio-clave" /usr/local/bin/estudio-clave
+
+  # LO QUE EL INSTALADOR PONE FUERA DE app/, puesto al dia igual: el envoltorio
+  # del navegador (con el MISMO navegador que ya tenia), los dos servicios y los
+  # trozos de nginx. Si no, un arreglo en cualquiera de ellos no llegaba nunca a
+  # quien ya lo tenia instalado. El sitio de nginx no se toca: lleva el dominio
+  # y los puertos de esta maquina.
+  navegador="$(sed -n 's/^exec \([^ ]*\) .*/\1/p' /usr/local/bin/estudio-edge 2>/dev/null | head -1)"
+  if [ -n "$navegador" ]; then
+    sed "s|__NAVEGADOR__|$navegador|" "$RAIZ/app/despliegue/estudio-edge" > /usr/local/bin/estudio-edge
+    chmod 755 /usr/local/bin/estudio-edge
+  fi
+  sed "s|/opt/as-video-studio|$RAIZ|g; s|^User=studio|User=$USUARIO|; s|^Group=studio|Group=$USUARIO|" \
+    "$RAIZ/app/despliegue/as-video-studio.service" > /etc/systemd/system/as-video-studio.service
+  sed "s|/opt/as-video-studio|$RAIZ|g; s|^User=studio|User=$USUARIO|; s|^Group=studio|Group=$USUARIO|" \
+    "$RAIZ/app/despliegue/as-video-login.service" > /etc/systemd/system/as-video-login.service
+  systemctl daemon-reload
+  install -m 644 "$RAIZ/app/despliegue/asvs-proxy.conf"       /etc/nginx/snippets/asvs-proxy.conf
+  install -m 644 "$RAIZ/app/despliegue/asvs-proxy-largo.conf" /etc/nginx/snippets/asvs-proxy-largo.conf
+  nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
+
   chown -R "$USUARIO:$USUARIO" "$RAIZ/app" "$RAIZ/login"
-  rm -rf "$temporal"
 
   systemctl restart as-video-login as-video-studio
+  trap - EXIT
+  rm -rf "$temporal"
   sleep 2
   echo
   estado

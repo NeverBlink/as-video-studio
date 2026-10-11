@@ -2046,7 +2046,7 @@ def estimar_video(cuerpo: dict = Body(default=None)):
     planos = max(1, int(round(segundos / media)))
 
     calidad = str(datos.get("calidad") or "low").lower()
-    usd_imagen = light.USD_POR_IMAGEN.get(calidad, light.USD_POR_IMAGEN["low"])
+    usd_imagen = light.usd_por_imagen(calidad)
 
     imagenes = max(1, planos)
 
@@ -3747,9 +3747,21 @@ def _correr_plan_cartelas(avisar, ctx, ajuste, aplicar=False):
         ficha["planos_tras_cartelas"] = len(plan.get("escenas") or [])
         avisar(0.98, f"{ficha['planos_tras_cartelas']} planos tras fundir las "
                      f"cartelas")
+        # «NINGUNA» TAMBIEN ES UNA DECISION, y se apunta (ver `_esta_al_dia`).
+        # En la CONFIG del proyecto y no en los params: no es una entrada de
+        # nadie, y en los params moveria la firma de assets.
+        ctx.proyecto.config[CONFIG_CARTELAS_DECIDIDAS] = _firma_del_guion(ctx)
+        ctx.proyecto.guardar_config()
     avisar(1.0, f"{ficha.get('cartelas')} de {ficha.get('planos')} planos "
                 f"serían cartela")
     return ficha
+
+
+#: El guion (por la huella de su texto) para el que ya se decidieron las
+#: cartelas. Sin esto, un video en el que el agente decide que NINGUN plano es
+#: cartela --una respuesta valida-- volvia a pedirlas en cada tanda: minutos de
+#: CLI cada vez, y si en una de esas salia alguna, cambiaba un video revisado.
+CONFIG_CARTELAS_DECIDIDAS = "cartelas_decididas"
 
 
 @app.post("/api/proyectos/{pid}/cartelas/plan", status_code=202)
@@ -5091,6 +5103,37 @@ def _sonido():
     return PASOS_MODULOS.sonido
 
 
+def _falta_clave_de_sonido(tarea_id):
+    """Si a esta tarea de sonido le falta su clave. -> el aviso, o ""
+
+    LA MUSICA Y LOS EFECTOS SON OPCIONALES, y asi lo dicen la guia de inicio, el
+    README y la pantalla de claves. Pero la tanda del MP4 los lanzaba sin mirar
+    si habia clave, `sonido` levantaba «falta la clave», y el fallo de un hilo
+    corta la receta ANTES de montar: sin esas dos claves no salia el MP4 nunca.
+    Sin su clave, la tarea se da por hecha (`_esta_al_dia`) y no se lanza
+    (`_que_hace`): el video sale sin musica, o sin efectos, que es lo prometido.
+    """
+    if tarea_id not in ("banda_sonora", "efectos"):
+        return ""
+    try:
+        musica, efectos = _sonido().hay_claves()
+    except Exception:                                         # noqa: BLE001
+        return ""
+    if tarea_id == "banda_sonora" and not musica:
+        return ("sin clave de Jamendo: el vídeo sale sin música (ponla en "
+                "Configuración si la quieres)")
+    if tarea_id == "efectos" and not efectos:
+        return ("sin clave de FreeSound: el vídeo sale sin efectos de sonido "
+                "(ponla en Configuración si los quieres)")
+    return ""
+
+
+def _tarea_sin_clave(avisar, aviso):
+    """Lo que corre en lugar de una tarea de sonido sin clave: decirlo y seguir."""
+    avisar(1.0, aviso)
+    return {"resumen": aviso}
+
+
 @app.get("/api/proyectos/{pid}/sonido")
 def leer_sonido(pid: str):
     """Qué suena en este vídeo: el tema puesto, los efectos surtidos y el catálogo."""
@@ -5270,7 +5313,8 @@ def montar_banda_sonora(pid: str, cuerpo: dict = Body(default=None)):
     sonido = _sonido()
     datos = _cuerpo(cuerpo)
     if not sonido.hay_claves()[0]:
-        raise ErrorApi(409, "falta JAMENDO_CLIENT_ID en C:\\IA\\secrets\\.env")
+        raise ErrorApi(409, "falta la clave de Jamendo (la música): ponla en "
+                            "Configuración")
     # los tramos se pueden pasar retocados desde avanzadas (otro ánimo), pero el
     # camino normal es no pasar nada y que los deduzca del ritmo
     tramos = datos.get("tramos") if isinstance(datos.get("tramos"), list) else None
@@ -5344,7 +5388,8 @@ def surtir_efectos(pid: str, cuerpo: dict = Body(default=None)):
         raise ErrorApi(400, f"papeles desconocidos: {', '.join(desconocidos)}. "
                             f"Los que hay son: {', '.join(sonido.PAPELES)}")
     if not sonido.hay_claves()[1]:
-        raise ErrorApi(409, "falta FREESOUND_API_KEY en C:\\IA\\secrets\\.env")
+        raise ErrorApi(409, "falta la clave de FreeSound (los efectos de "
+                            "sonido): ponla en Configuración")
     # 'salteado' rota por qué consulta se empieza: volver a pulsar trae OTROS
     # sonidos en vez de los mismos, que es lo que se espera de «buscar más».
     salteado = int(datos.get("salteado") or 0)
@@ -5508,6 +5553,9 @@ def _que_hace(tarea_id, ctx, receta, modo="pendientes", solo_montar=False):
         return _un_paso(ctx, "assets", modo, {"replantear": False})
     if tarea_id == "callouts":
         return _un_paso(ctx, "callouts", modo)
+    if tarea_id in ("banda_sonora", "efectos") and _falta_clave_de_sonido(tarea_id):
+        # tambien en modo «todo», que no pasa por `_esta_al_dia`
+        return _tarea_sin_clave, (_falta_clave_de_sonido(tarea_id),)
     if tarea_id == "banda_sonora":
         return _correr_banda, (ctx, None)
     if tarea_id == "efectos":
@@ -5546,7 +5594,12 @@ def _esta_al_dia(ctx, tarea):
         return bool(plan.get("escenas"))
     if tid == "plan_cartelas":
         unidades = (ctx.estado.params("assets") or {}).get("unidades") or {}
-        return any((u or {}).get("cartela") for u in unidades.values())
+        if any((u or {}).get("cartela") for u in unidades.values()):
+            return True
+        # cero cartelas, decididas ya para ESTE guion: tambien esta al dia
+        firma = _firma_del_guion(ctx)
+        return bool(firma) and ctx.proyecto.config.get(
+            CONFIG_CARTELAS_DECIDIDAS) == firma
     if tid == "direccion":
         unidades = (ctx.estado.params("assets") or {}).get("unidades") or {}
         return any((u or {}).get("direccion") for u in unidades.values())
@@ -5554,9 +5607,11 @@ def _esta_al_dia(ctx, tarea):
         # las piezas viven dentro de assets: si assets esta al dia, estan
         return ctx.estado.al_dia("assets")
     if tid == "banda_sonora":
-        return bool((ctx.estado.params("render") or {}).get("musica"))
+        return bool((ctx.estado.params("render") or {}).get("musica")) \
+            or bool(_falta_clave_de_sonido(tid))
     if tid == "efectos":
-        return bool((ctx.estado.params("render") or {}).get("efectos"))
+        return bool((ctx.estado.params("render") or {}).get("efectos")) \
+            or bool(_falta_clave_de_sonido(tid))
     return False
 
 
@@ -7017,10 +7072,19 @@ def _talleres_sueltos():
             continue
         if str(ficha.get("id")) in usados:
             continue
+        # EL ENCARGO Y CUANTAS IMAGENES TIENE, para que «Retomar» vuelva con el
+        # formulario relleno y no haya que escribirlo todo otra vez (ni volver
+        # a subir las imagenes: las del taller siguen valiendo).
+        aportadas = os.path.join(ficha.get("raiz") or "", "estilo", "aportadas")
+        imagenes = len([n for n in (os.listdir(aportadas)
+                                    if os.path.isdir(aportadas) else [])
+                        if os.path.splitext(n)[1].lower() in EXT_APORTADAS])
         sueltos.append({"id": ficha.get("id"),
                         "nombre": ficha.get("nombre") or ficha.get("id"),
                         "creado": ficha.get("creado", ""),
-                        "actualizado": ficha.get("actualizado", "")})
+                        "actualizado": ficha.get("actualizado", ""),
+                        "encargo": ficha.get(CONFIG_ENCARGO_TALLER) or None,
+                        "imagenes": imagenes})
     sueltos.sort(key=lambda f: str(f.get("actualizado") or ""), reverse=True)
     return sueltos
 
@@ -7090,10 +7154,16 @@ def _correr_light_guia(avisar, ctx, encargo):
     #
     # Se leen del TALLER y no del encargo: el encargo trae los nombres del buzon
     # y el buzon se vacia al copiarlas dentro.
+    #
+    # Y CON `guia_de_descripcion`, no con `generar_guia`: las dos escriben la
+    # misma guia con la misma instruccion, pero la segunda es la del video y
+    # exige tres fotogramas («con menos se describe una escena»). El formulario
+    # deja crear un estilo con UNA imagen, asi que con una o dos la tanda moria
+    # aqui con «hacen falta al menos 3 fotogramas».
     aportadas = _aportadas_del_taller(ctx)
-    guia = estilo.generar_guia(ctx.proyecto, aportadas, avisar=avisar,
-                               proyecto_id=ctx.id, peticion=peticion,
-                               indicaciones=encargo.get("estilo_prompt"))
+    guia = estilo.guia_de_descripcion(ctx.proyecto, encargo.get("estilo_prompt"),
+                                      avisar=avisar, proyecto_id=ctx.id,
+                                      peticion=peticion, rutas=aportadas)
     bloque = dict((ctx.estado.params("assets") or {}).get("estilo") or {})
     bloque["guia"] = guia
     ctx.estado.actualizar_params("assets", {"estilo": bloque})
@@ -7143,10 +7213,16 @@ def _correr_light_referencias(avisar, ctx, encargo):
     # que ensena a rotular mal con un ejemplo dibujado.
     idioma = str(encargo.get("idioma") or "").strip().lower()
     destino = os.path.join(ctx.proyecto.raiz, "estilo", "dibujadas")
+    # CON TUS IMAGENES DELANTE. Se dibujaban solo con la guia --la lista de
+    # referencias iba vacia a proposito-- y el motor de imagen la rechazaba, asi
+    # que crear un estilo fallaba siempre en este paso. Ahora van montadas en
+    # una lamina, igual que los fotogramas de un video (ver
+    # `moodboard.dibujar_desde_guia`), y las laminas se parecen a lo que diste.
     hecho = mod.dibujar_desde_guia({"guia": bloque.get("guia")}, destino,
                                    ejes=pedidos, peticiones=peticiones,
                                    calidad=calidad, avisar=avisar,
-                                   idioma=idioma)
+                                   idioma=idioma,
+                                   referencias=_aportadas_del_taller(ctx))
     # LA LISTA NO SE PISA CUANDO SOLO SE HA REDIBUJADO UNA. Cada lamina se
     # escribe en `<eje>.png`, o sea encima de la que habia, asi que las otras
     # cinco siguen en su sitio y en la lista. Escribir aqui `hecho["rutas"]` a
@@ -7492,8 +7568,13 @@ _LIGHT_QUE_HACE = {
 }
 
 
-def _correr_preset_light(avisar, ctx, encargo, solo, preset_id, retomar=False):
+def _correr_preset_light(avisar, ctx, encargo, solo, preset_id, retomar=False,
+                         rehacer=None):
     """Recorre el plan tanda a tanda y congela el resultado en el preset.
+
+    `rehacer` son las PARTES (estilo, tono, voz) cuyo encargo ha cambiado al
+    retomar (`_partes_cambiadas`): sus tareas se vuelven a hacer aunque ya
+    estuvieran hechas, porque se hicieron con el texto de antes.
 
     LA BARRA VA POR TIEMPO, no por numero de tareas. Cada tanda ocupa en la barra
     lo que se espera que tarde (`presets_light.plan_de`, que mira el historial
@@ -7507,13 +7588,16 @@ def _correr_preset_light(avisar, ctx, encargo, solo, preset_id, retomar=False):
     total = max(1.0, float(plan["segundos"]))
     salida = {"tareas": [], "preset": preset_id, "coste_usd": 0.0}
     cerrojo = threading.Lock()
+    otra_vez = {t for parte in (rehacer or ())
+                for t in (light.PARTES.get(parte) or {}).get("tareas", ())}
 
     for tanda in plan["tandas"]:
         # RETOMAR se salta lo que ya salio bien en este taller. Nunca se salta
         # nada en una pasada normal ni al rehacer una parte: ahi el encargo es
         # justamente volver a hacerlo.
         if retomar:
-            tanda = [f for f in tanda if not _light_hecha(ctx, f["id"], encargo)]
+            tanda = [f for f in tanda if f["id"] in otra_vez
+                     or not _light_hecha(ctx, f["id"], encargo)]
             if not tanda:
                 continue
 
@@ -7645,7 +7729,7 @@ def _curar_muestras(ficha):
         las declara y no
         estan en el disco  se las llevo por delante un guardado posterior, de
                            cuando sembrar el estilo borraba la carpeta entera
-                           (`presets_canal._apartar_propios`). Se recuperan del
+                           del preset (hasta octubre de 2026). Se recuperan del
                            taller, que las tiene intactas.
         no las declara     un estilo anterior a que se guardaran sueltas. Su 2x2
                            se parte en cuatro ficheros, que son los mismos cuatro
@@ -7732,10 +7816,69 @@ def listar_presets_light():
                         "solo": t.get("solo") or ""} for t in light.TAREAS]}
 
 
+#: Donde guarda el taller el encargo con el que se lanzo (sin el feedback, que
+#: es de una pasada). Es lo que permite RETOMAR despues de recargar la pagina:
+#: el formulario vivia solo en el navegador y volvia vacio.
+CONFIG_ENCARGO_TALLER = "encargo_light"
+
+
+def _taller_para_retomar(datos):
+    """El taller que se pide retomar, o None. -> ctx | None (o 4xx)."""
+    pedido = str((datos or {}).get("taller") or "").strip()
+    if not pedido:
+        return None
+    try:
+        ctx = contexto(pedido)
+    except ErrorApi:
+        raise ErrorApi(404, f"el taller {pedido} ya no esta en el disco")
+    if not ctx.proyecto.config.get(CONFIG_TALLER):
+        raise ErrorApi(400, f"{pedido} no es un taller de estilo")
+    return ctx
+
+
+def _con_imagenes_del_taller(datos, ctx):
+    """Al retomar sin subir imagenes, valen las que ya tiene el taller. -> datos
+
+    Las imagenes se copian dentro del taller al lanzar y el buzon se vacia, asi
+    que despues de recargar la pagina el formulario no tiene ninguna que
+    mandar, y validar el encargo contestaba «falta el estilo grafico». Se
+    rellena con los nombres de las del taller: `_sembrar_aportadas` no las
+    encuentra en el buzon y conserva las que hay, que es justo lo que se quiere.
+    """
+    if ctx is None or datos.get("estilo_imagenes"):
+        return datos
+    propias = [os.path.basename(r) for r in _aportadas_del_taller(ctx)]
+    return dict(datos, estilo_imagenes=propias) if propias else datos
+
+
+def _partes_cambiadas(antes, encargo, imagenes_nuevas):
+    """Que partes del estilo hay que REHACER al retomar con otro encargo. -> set
+
+    Retomar se salta lo que ya salio bien, y eso es lo que se quiere si se
+    vuelve a pulsar con lo mismo. Pero si al retomar se ha reescrito el tono, la
+    guia de tono hecha con el texto viejo no vale: se saltaba igual, y el preset
+    guardaba el texto nuevo junto a unas instrucciones escritas con el viejo.
+    """
+    if not antes:
+        return set()
+    cambiadas = set()
+    if imagenes_nuevas or (antes.get("estilo_prompt") or "") != (
+            encargo.get("estilo_prompt") or ""):
+        cambiadas.add("estilo")
+    if (antes.get("tono_prompt") or "") != (encargo.get("tono_prompt") or ""):
+        cambiadas.add("tono")
+    if any((antes.get(c) or "") != (encargo.get(c) or "")
+           for c in ("voz_prompt", "voz_id", "idioma")):
+        cambiadas.add("voz")
+    return cambiadas
+
+
 @app.post("/api/presets-light/plan")
 def plan_preset_light(cuerpo: dict = Body(default=None)):
     """Lo que va a hacer, en orden y con sus tiempos. No lanza nada."""
-    encargo = _encargo_o_400(_cuerpo(cuerpo))
+    datos = _cuerpo(cuerpo)
+    encargo = _encargo_o_400(
+        _con_imagenes_del_taller(datos, _taller_para_retomar(datos)))
     plan = _light().plan_de(encargo)
     return {"encargo": encargo, "plan": plan}
 
@@ -7750,29 +7893,34 @@ def crear_preset_light(cuerpo: dict = Body(default=None)):
     vez de en rehacer el tono y la voz que ya estaban escritos.
     """
     datos = _cuerpo(cuerpo)
-    encargo = _encargo_o_400(datos)
-    pedido = str(datos.get("taller") or "").strip()
-    retomar = False
-    if pedido:
-        try:
-            ctx = contexto(pedido)
-        except ErrorApi:
-            raise ErrorApi(404, f"el taller {pedido} ya no esta en el disco")
-        if not ctx.proyecto.config.get(CONFIG_TALLER):
-            raise ErrorApi(400, f"{pedido} no es un taller de estilo")
-        retomar = True
+    ctx = _taller_para_retomar(datos)
+    retomar = ctx is not None
+    imagenes_nuevas = bool(_rutas_aportadas(datos.get("estilo_imagenes")))
+    encargo = _encargo_o_400(_con_imagenes_del_taller(datos, ctx))
+    rehacer = set()
+    if retomar:
+        rehacer = _partes_cambiadas(
+            ctx.proyecto.config.get(CONFIG_ENCARGO_TALLER), encargo,
+            imagenes_nuevas)
     else:
         ctx = _crear_taller(encargo)
     _sembrar_taller(ctx, encargo)
     # ANTES de lanzar: la guia es la primera tarea que las mira, y retomar un
     # taller no puede perderlas -- se vuelven a copiar y ya estaban.
     aportadas = _sembrar_aportadas(ctx, encargo)
+    # EL ENCARGO SE QUEDA EN EL TALLER, para poder retomarlo despues de recargar
+    # la pagina (ver CONFIG_ENCARGO_TALLER). Sin el feedback: es de esta pasada.
+    ctx.proyecto.config[CONFIG_ENCARGO_TALLER] = {
+        c: v for c, v in encargo.items() if c not in ("feedback", "laminas")}
+    ctx.proyecto.guardar_config()
     ctx.bitacora.anotar("preset_light_lanzado", None,
                         {"nombre": encargo["nombre"], "idioma": encargo["idioma"],
                          "ritmo": encargo.get("ritmo"), "retomado": retomar,
+                         "rehacer": sorted(rehacer),
                          "aportadas": len(aportadas)})
     trabajo_id = ctx.gestor.lanzar("preset_light", _correr_preset_light, ctx,
-                                   encargo, None, None, retomar, paso="assets")
+                                   encargo, None, None, retomar, paso="assets",
+                                   rehacer=rehacer)
     _registrar_trabajo(trabajo_id, ctx.id)
     return {"trabajo_id": trabajo_id, "taller": ctx.id, "encargo": encargo,
             "retomado": retomar, "plan": _light().plan_de(encargo),
@@ -7949,11 +8097,20 @@ def regenerar_preset_light(preset_id: str, cuerpo: dict = Body(default=None)):
     antes = dict(origen)
     origen["nombre"] = ficha.get("nombre") or "canal"
     origen.setdefault("idioma", _presets().idioma_de(ficha) or "es")
+    nuevas_imagenes = []
     if fuente and parte == "estilo":
-        # las DOS a la vez y siempre: dejar la vieja puesta es como se acaba con
-        # unas indicaciones que describen unas imagenes que ya no estan
+        # LAS INDICACIONES SIEMPRE, LAS IMAGENES SOLO SI LLEGAN. Se pisaban las
+        # dos «a la vez y siempre», y la pantalla manda la lista de imagenes
+        # vacia cuando solo se ha reescrito el texto: el origen se quedaba sin
+        # ninguna, `validar_encargo` contestaba «falta el estilo grafico», y
+        # corregir el estilo con las indicaciones --la unica caja que hay para
+        # eso-- daba un 400 salvo subiendo imagenes otra vez. Un estilo no puede
+        # quedarse sin imagenes, asi que sin nuevas se quedan las que tenia.
         origen["estilo_prompt"] = fuente.get("estilo_prompt") or ""
-        origen["estilo_imagenes"] = fuente.get("estilo_imagenes") or []
+        nuevas_imagenes = [n for n in (fuente.get("estilo_imagenes") or [])
+                           if str(n or "").strip()]
+        if nuevas_imagenes:
+            origen["estilo_imagenes"] = nuevas_imagenes
     if fuente and parte == "tono":
         origen["tono_prompt"] = fuente.get("tono_prompt") or ""
     encargo = _encargo_o_400(origen)
@@ -7961,10 +8118,9 @@ def regenerar_preset_light(preset_id: str, cuerpo: dict = Body(default=None)):
     # ¿HAN CAMBIADO LAS IMAGENES, O SOLO LAS INDICACIONES? Cambiar «igual pero
     # mas frio» con las MISMAS imagenes detras solo obliga a reescribir la guia y
     # lo que cuelga de ella, que es justo lo que rehace la parte «estilo» de
-    # siempre. Se compara con lo que habia, no con si vino `origen`: la pantalla
+    # siempre. Lo que cuenta es si han llegado imagenes NUEVAS: la pantalla
     # manda las dos claves juntas y una de ellas puede no haberse tocado.
-    material = bool(fuente) and parte == "estilo" and bool(
-        encargo.get("estilo_imagenes"))
+    material = bool(fuente) and parte == "estilo" and bool(nuevas_imagenes)
     # El feedback viaja por INVOCACION y no se guarda en el encargo: describe
     # esta pasada, no lo que el preset es. Guardarlo lo aplicaria otra vez la
     # proxima, y dos correcciones seguidas se sumarian sin que nadie lo pida.
@@ -8480,7 +8636,7 @@ def _coste_previsto(ctx, pestanas):
     planos = _planos_previstos(ctx)
     assets = ctx.estado.params("assets") or {}
     calidad = str(assets.get("calidad") or "low").lower()
-    usd_imagen = light.USD_POR_IMAGEN.get(calidad, light.USD_POR_IMAGEN["low"])
+    usd_imagen = light.usd_por_imagen(calidad)
     tarifas = COSTE.tarifas()
     usd_caracter = float(((tarifas.get("tts") or {}).get("usd_por_caracter")) or 0.0)
 
@@ -8604,6 +8760,23 @@ def _segundos_de_tarea(ctx, tarea, planos, palabras, reparto=None,
     return segundos
 
 
+def _modo_de_la_pestana(pestana, modo, datos):
+    """El modo con el que corre UNA pestana dentro de una tanda. -> str
+
+    LA TANDA DEL MP4 NUNCA REDIBUJA. Lleva la pestana de imagenes delante solo
+    para poner al dia lo que se quedo viejo (ver TANDAS_LIGHT), y el boton
+    «Regenerar Vídeo» la lanza en modo 'todo' para volver a MONTAR. Pero el
+    modo se aplicaba a las dos pestanas, y en la de imagenes 'todo' es rehacer
+    la guia, el corte, la direccion, las hojas y todos los planos sin cache:
+    unos 4 $ en un video de cuatro minutos, con el boton diciendo «No genera
+    ninguna imagen: no cuesta dinero». Ahora 'todo' solo rehace el montaje.
+    """
+    tanda = str((datos or {}).get("tanda") or "").strip().lower()
+    if tanda == "render" and pestana == "video":
+        return "pendientes"
+    return modo
+
+
 def _plan_de_generacion(ctx, pestanas, modo="pendientes", datos=None):
     """Que se va a hacer, cuanto va a tardar y cuanto va a costar. No lanza nada.
 
@@ -8618,7 +8791,9 @@ def _plan_de_generacion(ctx, pestanas, modo="pendientes", datos=None):
         ctx.proyecto, "brief", "brief.json", obligatorio=False) or {}
     palabras = int(brief.get("presupuesto_palabras") or 0)
     fases, total = [], 0.0
+    pedido = modo
     for pestana in pestanas:
+        modo = _modo_de_la_pestana(pestana, pedido, datos)
         receta = _receta_de_video(ctx, pestana, datos)
         sin = _sin_de_la_tanda(datos)
         puestas = [t for t in recetas.puestas_de(pestana, receta)
@@ -8652,7 +8827,7 @@ def _plan_de_generacion(ctx, pestanas, modo="pendientes", datos=None):
                           [{"id": t["id"]} for t in pendientes])})
         total += segundos
     return {
-        "pestanas": list(pestanas), "modo": modo,
+        "pestanas": list(pestanas), "modo": pedido,
         "fases": fases,
         "segundos": round(total, 1),
         "tareas": sum(len(f["pendientes"]) for f in fases),
@@ -8702,7 +8877,8 @@ def _correr_cadena(avisar, ctx, pestanas, modo, datos, plan):
                    if t not in sin]
         if not recetas.orden_de(pestana, puestas):
             continue
-        hecho = _correr_receta(avisar_fase, ctx, pestana, receta, puestas, modo,
+        hecho = _correr_receta(avisar_fase, ctx, pestana, receta, puestas,
+                               _modo_de_la_pestana(pestana, modo, datos),
                                hechas_antes=hechas_antes,
                                total_global=total_publico)
         # LAS QUE DE VERDAD HAN CORRIDO, no las que el plan preveia: entre
@@ -8916,6 +9092,53 @@ def generar_video(pid: str, cuerpo: dict = Body(default=None)):
             "eventos": f"/api/trabajos/{trabajo_id}/eventos"}
 
 
+def _referencias_propias_del_video(ctx):
+    """El video nuevo se queda con SU copia de las laminas del estilo. -> [rutas]
+
+    Las referencias de estilo entran con ruta absoluta en los params de assets
+    (y en su firma), y apuntaban a la carpeta del ESTILO. Esa carpeta es de
+    otro: si el estilo se borraba de la papelera --o antes de octubre de 2026,
+    si se volvia a guardar-- el video se quedaba sin referencias y no podia
+    dibujar ni corregir un plano. Con su copia dentro, lo que le pase al estilo
+    despues ya no le toca, y al mudarlo de maquina viaja con el resto.
+
+    Solo al CREAR: un video ya hecho no se toca, que cambiarle las rutas le
+    moveria la firma de assets y ofreceria regenerarlo entero.
+    """
+    bloque = dict((ctx.estado.params("assets") or {}).get("estilo") or {})
+    rutas = [r for r in (bloque.get("referencias") or [])
+             if r and os.path.isfile(r)]
+    if not rutas:
+        return []
+    carpeta = os.path.join(ctx.proyecto.raiz, "estilo", "referencias")
+    os.makedirs(carpeta, exist_ok=True)
+    propias = []
+    for ruta in rutas:
+        final = os.path.join(carpeta, os.path.basename(ruta))
+        shutil.copyfile(ruta, final)
+        propias.append(final)
+    bloque["referencias"] = propias
+    ctx.estado.actualizar_params("assets", {"estilo": bloque})
+    return propias
+
+
+def _calidad_de_partida(ctx):
+    """La calidad de Configuracion, en un video nuevo que no traiga otra.
+
+    Es la regla de `crear_proyecto` («la calidad de imagen se escribe aqui, al
+    crear»), y el video que nace de un estilo no pasaba por ahi: todos salian
+    en la calidad por defecto del paso, dijera lo que dijera Configuracion. Si
+    el estilo ya trae una, manda la suya.
+    """
+    if (ctx.estado.params("assets") or {}).get("calidad"):
+        return
+    try:
+        ctx.estado.actualizar_params("assets",
+                                     {"calidad": AJUSTES.calidad_imagen()})
+    except Exception:                                         # noqa: BLE001
+        pass     # un ajuste ilegible no puede impedir crear el video
+
+
 @app.post("/api/presets-light/{preset_id}/video", status_code=201)
 def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
     """Un proyecto de video nuevo con ese estilo ya aplicado. -> la ficha.
@@ -8970,6 +9193,8 @@ def crear_video_light(preset_id: str, cuerpo: dict = Body(default=None)):
     # camino que copiara las claves a mano se quedaria viejo el dia que un
     # preset guarde una mas.
     aplicado = aplicar_preset_canal(proyecto.id, preset_id)
+    _referencias_propias_del_video(ctx)
+    _calidad_de_partida(ctx)
     avisos = _sembrar_video_light(ctx, datos)
     ctx.bitacora.anotar("video_light_creado", None, {
         "preset": preset_id, "estilo": ficha_preset.get("nombre"),

@@ -562,11 +562,16 @@ def guia_de_descripcion(proyecto, descripcion, modelo=None, esfuerzo=None,
     prevision = estadisticas.estimar(PASO_GUIA, tamano=len(rutas), ajuste=ajuste)
     avance = None
     if callable(avisar):
+        if rutas and descripcion:
+            que = (f"mirando {len(rutas)} imagen(es) y tus indicaciones para "
+                   f"escribir la guia")
+        elif rutas:
+            que = f"mirando {len(rutas)} imagen(es) para escribir la guia"
+        else:
+            que = "escribiendo la guia a partir de tu descripcion"
         avance = estadisticas.Avance(
             avisar, 0.05, 0.9, prevision,
-            "escribiendo la guia a partir de tu descripcion"
-            + (f" y {len(rutas)} imagenes de apoyo" if rutas else "")
-            + f" con {modelo} (esfuerzo {esfuerzo})")
+            f"{que} con {modelo} (esfuerzo {esfuerzo})")
         avance.arrancar()
 
     arranque = time.time()

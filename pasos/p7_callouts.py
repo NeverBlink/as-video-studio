@@ -33,6 +33,7 @@ previo/<id>.png (plano + capa compuestos para la pantalla de revision).
 import os
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -918,7 +919,10 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
     else:
         x0, y0, x1 = 0.0, 0.0, float(lienzo[0])
     escala = ancho / max(1.0, (x1 - x0))
-    html = (f'<html><body style="margin:0;width:{ancho}px;height:{alto}px;'
+    # LA PAGINA ES ALTO_FIRMA PIXELES MAS ALTA que el cuadro: debajo va la firma
+    # de carga (ver FIRMA_PREVIA), que se comprueba y se recorta despues.
+    html = (f'<html><body style="margin:0;width:{ancho}px;'
+            f'height:{alto + ALTO_FIRMA}px;'
             f'overflow:hidden;background:#0b0c09">'
             f'<div style="position:absolute;left:0;top:0;'
             f'width:{ancho}px;height:{alto}px;overflow:hidden">'
@@ -926,7 +930,7 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
             f'transform-origin:0 0;'
             f'transform:translate({-x0 * escala:.3f}px,{-y0 * escala:.3f}px) '
             f'scale({escala:.6f})">'
-            f'<img src="file:///{ruta_png.replace(chr(92), "/")}" '
+            f'<img src="{Path(ruta_png).resolve().as_uri()}" '
             f'style="display:block;width:{lienzo[0]}px;height:{lienzo[1]}px">'
             f'<div style="position:absolute;left:0;top:0;'
             f'width:{lienzo[0]}px;height:{lienzo[1]}px">{svg}</div>'
@@ -938,21 +942,38 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
             f'width:{ancho}px;height:{alto}px">{fija}</div>'
             f'</div>'
             f'<script>{BUSCAR_ENTRADAS}</script>'
+            # LA FIRMA, fuera del cuadro: solo se pinta si la pagina cargo y sus
+            # imagenes tambien. La pagina de error de un navegador no la tiene.
+            f'<div id="firma-previa" style="position:absolute;left:0;'
+            f'top:{alto}px;width:{4 * len(FIRMA_PREVIA)}px;'
+            f'height:{ALTO_FIRMA}px;z-index:99999"></div>'
+            '<script>window.addEventListener("load",function(){'
+            'var todas=Array.prototype.every.call(document.images,'
+            'function(i){return i.complete&&i.naturalWidth>0;});'
+            'if(todas)document.getElementById("firma-previa").style.background='
+            + '"linear-gradient(to right,'
+            + ",".join(f"#{r:02x}{g:02x}{b:02x} {4 * i}px {4 * i + 4}px"
+                       for i, (r, g, b) in enumerate(FIRMA_PREVIA))
+            + ')";});</script>'
             f'</body></html>')
     ruta_html = medios.escribir_texto(destino + ".html", html)
-    medios.rasterizar(ruta_html, destino, ancho, alto, transparente=False)
+    medios.rasterizar(ruta_html, destino, ancho, alto + ALTO_FIRMA,
+                      transparente=False)
     os.remove(ruta_html)
-    _comprobar_previa(destino)
+    _comprobar_previa(destino, salida)
     return destino
 
 
-#: El fondo del cuadro compuesto, en el HTML de arriba. Sirve de FIRMA: si la
-#: esquina no se parece a esto, lo que hay dentro no lo ha pintado esta funcion.
-FONDO_PREVIA = (0x0b, 0x0c, 0x09)
+#: LA FIRMA DE CARGA: tres colores que el HTML de la previa pinta DEBAJO del
+#: cuadro solo cuando la pagina y todas sus imagenes han cargado. Si estan, lo
+#: que hay encima lo ha pintado esta funcion; si no, es otra cosa.
+FIRMA_PREVIA = ((0x13, 0x7b, 0xc9), (0xda, 0x31, 0x5f), (0x29, 0xb4, 0x6e))
+#: Lo que mide la franja de la firma, que se recorta despues.
+ALTO_FIRMA = 4
 
 
-def _comprobar_previa(destino):
-    """Levanta si el PNG compuesto no es el cuadro, sino otra cosa.
+def _comprobar_previa(destino, salida=SALIDA):
+    """Levanta si el PNG compuesto no es el cuadro, y si lo es le quita la firma.
 
     EDGE NO FALLA CUANDO NO ENCUENTRA ALGO: pinta SU pagina de error --«File not
     found», casi blanca-- y la fotografia. El PNG aparece, `rasterizar` lo da
@@ -961,23 +982,31 @@ def _comprobar_previa(destino):
     versiones, todas de 27 KB, y nadie levanto en ningun sitio: se vieron
     MIRANDO la pantalla.
 
-    La firma es la esquina. Este HTML pinta el fondo a #0b0c09 y encima el plano
-    escalado, asi que la esquina de un cuadro de verdad es oscura o es imagen;
-    la de la pagina de error es casi blanca. No se mira el peso: un plano
-    legitimamente plano pesa poco y seria un falso positivo.
+    LA FIRMA ERA LA ESQUINA, y fallaba al reves: un cuadro de verdad con la
+    esquina clara (cielo, una pared, un papel) se tomaba por la pagina de
+    error, y ese plano se quedaba sin previa. Ahora la firma es positiva: la
+    pinta el propio HTML (FIRMA_PREVIA) despues de cargar las imagenes, fuera
+    del cuadro, y aqui se comprueba y se recorta. La idea es de la propuesta de
+    LuisAPPDev en GitHub (PR #2).
 
     Levanta y no borra el PNG: quien llama lo recoge como aviso (ver `ejecutar`)
     y asi queda en disco para poder mirarlo si alguien pregunta por que.
     """
-    try:
-        from PIL import Image                                 # noqa: PLC0415
-        esquina = Image.open(destino).convert("RGB").load()[5, 5]
-    except Exception:                                         # noqa: BLE001
-        return
-    if min(esquina) > 200:
-        raise RuntimeError(
-            f"la previa salio en blanco ({esquina}): Edge ha fotografiado una "
-            f"pagina de error en vez del cuadro")
+    from PIL import Image                                     # noqa: PLC0415
+    ancho, alto = salida
+    with Image.open(destino) as captura:
+        if captura.size != (ancho, alto + ALTO_FIRMA):
+            raise RuntimeError(
+                f"la previa ha salido de {captura.size[0]}x{captura.size[1]} y "
+                f"no de {ancho}x{alto + ALTO_FIRMA}")
+        rgb = captura.convert("RGB")
+    for indice, esperado in enumerate(FIRMA_PREVIA):
+        actual = rgb.getpixel((indice * 4 + 1, alto + 1))
+        if any(abs(a - e) > 8 for a, e in zip(actual, esperado)):
+            raise RuntimeError(
+                "la previa no confirma que la pagina y sus imagenes cargaran: "
+                "el navegador ha fotografiado otra cosa (una pagina de error)")
+    rgb.crop((0, 0, ancho, alto)).save(destino)
 
 
 # ------------------------------------------------------------------ capturas

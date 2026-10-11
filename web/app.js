@@ -4741,6 +4741,7 @@ APP.light = {
   abierto: null,        // id del preset abierto en la vista 'preset'
   plan: null,           // el plan de la generacion en marcha
   taller: null,         // el taller de la tanda en marcha, para poder retomarla
+  imagenesDelTaller: 0, // al retomar: las que ya tiene ese taller
   encargo: null,        // el formulario a medio rellenar
   feedback: {},         // parte -> lo escrito en su caja
   escuchas: {},         // preset -> url de su ultima escucha de voz
@@ -5315,7 +5316,7 @@ function vistaGaleriaLight() {
         `${taller.nombre} · ${fechaCorta(taller.actualizado) || ''}`),
       h('button', {
         clase: 'mini',
-        onclick: () => irALight('crear', { taller: taller.id }),
+        onclick: () => retomarTallerLight(taller),
       }, 'Retomar'),
       h('button', {
         clase: 'mini peligro', onclick: () => descartarTallerLight(taller),
@@ -5323,6 +5324,26 @@ function vistaGaleriaLight() {
     caja.appendChild(aviso);
   }
   return caja;
+}
+
+/* RETOMAR VUELVE CON EL FORMULARIO RELLENO. El encargo vivía solo en el
+   navegador: tras recargar la página, «Retomar» abría el formulario vacío y
+   había que escribirlo todo y volver a subir imágenes. Ahora el taller guarda
+   el encargo con el que se lanzó (lo devuelve el servidor en `sueltos`), y sus
+   imágenes siguen valiendo sin subirlas otra vez: el servidor usa las del
+   taller si no llegan otras (`_con_imagenes_del_taller`). */
+function retomarTallerLight(taller) {
+  const guardado = taller.encargo || {};
+  const actual = encargoLight();
+  ['nombre', 'idioma', 'estilo_prompt', 'tono_prompt', 'voz_prompt', 'voz_id',
+    'ritmo'].forEach(clave => {
+    if (guardado[clave] !== undefined && guardado[clave] !== null) {
+      actual[clave] = guardado[clave];
+    }
+  });
+  actual.estilo_imagenes = [];
+  irALight('crear', { taller: taller.id,
+    imagenesDelTaller: Number(taller.imagenes) || 0 });
 }
 
 /* PULSAR UNA TARJETA LA ELIGE Y PASA AL SIGUIENTE PASO, no la abre. Lo que se
@@ -9122,6 +9143,14 @@ function camposEstiloLight() {
   const e = encargoLight();
   const caja = h('div', {});
   caja.appendChild(imagenesDeApoyoLight(e, tocarEncargoLight));
+  // AL RETOMAR, las imágenes del intento siguen en el servidor (ver
+  // `retomarTallerLight`): se dice, para que nadie las vuelva a subir.
+  const delTaller = APP.light.taller ? Number(APP.light.imagenesDelTaller) || 0 : 0;
+  if (delTaller) {
+    caja.appendChild(h('div', { clase: 'meta' },
+      `Las ${delTaller} imágenes de este intento siguen guardadas: si no subes `
+      + 'otras, se usan esas.'));
+  }
   caja.appendChild(campoArea('Indicaciones (opcional)', e.estilo_prompt,
     v => { e.estilo_prompt = v; tocarEncargoLight(); },
     'igual pero más frío, con menos detalle en los fondos'));
@@ -9281,12 +9310,21 @@ function pieDeCreacion() {
       'Se salta lo que ya salió bien y sigue por donde iba. ',
       h('button', {
         clase: 'mini fantasma',
-        onclick: () => { APP.light.taller = null; pintarLight(); },
+        onclick: () => {
+          APP.light.taller = null;
+          APP.light.imagenesDelTaller = 0;
+          pintarLight();
+        },
       }, 'Empezar de cero')));
   }
 
   const comprobar = () => {
-    pedir(API.presetLightPlan(), { method: 'POST', cuerpo: encargoParaServidor() })
+    // con el taller delante: al retomar sin subir imágenes valen las suyas, y
+    // sin decírselo el plan contestaba «falta el estilo gráfico»
+    pedir(API.presetLightPlan(), {
+      method: 'POST',
+      cuerpo: Object.assign(encargoParaServidor(), aMedias ? { taller: aMedias } : {}),
+    })
       .then(datos => {
         const plan = datos.plan || {};
         const imagenes = Number(plan.imagenes) || 0;
@@ -10077,8 +10115,10 @@ function fuenteCambiadaLight(ficha) {
 }
 
 /* Lo que viaja al servidor cuando la fuente ha cambiado. Las dos claves
-   SIEMPRE, aunque una vaya vacía: el servidor distingue «no me manda imágenes»
-   de «me manda una lista vacía», y sólo la segunda dice «quítalas». */
+   SIEMPRE, aunque una vaya vacía. Una lista de imágenes vacía NO las quita: un
+   estilo no puede quedarse sin imágenes, así que el servidor conserva las que
+   tenía y solo reescribe lo que dependa de las indicaciones
+   (`regenerar_preset_light`). Antes las vaciaba y contestaba con un 400. */
 function fuenteParaServidor(_ficha) {
   const f = APP.light.fuente || {};
   return {

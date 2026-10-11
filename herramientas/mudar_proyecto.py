@@ -48,8 +48,8 @@ conducta), y se re-sellan solo aquellas cuya firma si estaba en sincronia.
 Uso
 ---
     python herramientas/mudar_proyecto.py <carpeta> \\
-        --regla "C:\\IA\\estudio\\proyectos=/opt/studio/datos/adrian/proyectos" \\
-        --regla "C:\\IA\\estudio\\banco=/opt/studio/datos/adrian/banco" \\
+        --regla "C:\\estudio\\proyectos=/opt/as-video-studio/datos/proyectos" \\
+        --regla "C:\\estudio\\banco=/opt/as-video-studio/datos/banco" \\
         [--aplicar]
 
 Sin `--aplicar` es un SIMULACRO: dice cuantas rutas y cuantas firmas cambiaria
@@ -114,7 +114,7 @@ def mudar_cadena(dato, reglas):
     detalle de estilo. Aquella se escribio para `duplicar`, que copia dentro de
     la MISMA maquina: cambia el prefijo y pega la cola tal cual, y en Windows da
     igual con que barra venga. Cruzando de Windows a Linux no da igual --deja
-    `/opt/studio/datos/adrian/proyectos` + `{BS}taller{BS}estilo{BS}f_0079.png`,
+    `/opt/as-video-studio/datos/proyectos` + `{BS}taller{BS}estilo{BS}f_0079.png`,
     que en Linux es UN nombre de fichero con barras invertidas dentro y no
     existe--. Se vio comparando cuantos ficheros del estado estan en disco: 31
     en el origen y 0 en el destino.

@@ -766,6 +766,62 @@ def _python():
     return ejecutable
 
 
+#: LO QUE OCUPA UN LOTE EN SU PEOR MOMENTO, medido (01-10-2026, render de 281
+#: planos a 1080p): 2,37 GB de memoria comprometida, 1,46 de ellos de ffmpeg
+#: codificando y el resto de Edge y Python, que estan todo el rato. Con 16 lotes
+#: en una maquina con la memoria justa, 10 murieron con MemoryError a las tres
+#: horas, y el render no se entero hasta el final.
+GB_POR_LOTE = 2.4
+#: Lo que se deja para todo lo demas (el sistema, el servicio, el navegador de
+#: quien mira la pantalla).
+GB_RESERVA = 2.0
+
+
+def _memoria_total_gb():
+    """La memoria fisica de la maquina en GB, o None si no se sabe."""
+    try:
+        if os.name == "nt":
+            import ctypes                                     # noqa: PLC0415
+
+            class _Memoria(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+            memoria = _Memoria()
+            memoria.dwLength = ctypes.sizeof(_Memoria)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memoria)):
+                return memoria.ullTotalPhys / 1024 ** 3
+            return None
+        with open("/proc/meminfo", encoding="utf-8") as fh:
+            for linea in fh:
+                if linea.startswith("MemTotal:"):
+                    return int(linea.split()[1]) / 1024 ** 2
+    except Exception:                                         # noqa: BLE001
+        return None
+    return None
+
+
+def _tope_por_memoria():
+    """Cuantos lotes caben en la memoria de esta maquina. -> int
+
+    POR NUCLEOS NO BASTA. El instalador pone un lote por nucleo, y en los VPS de
+    Hostinger cuadra (4 GB por nucleo), pero un VPS de 4 nucleos y 8 GB pediria
+    cuatro lotes, unos 9,5 GB en el peor momento, y el render moriria por
+    memoria a media tanda. Sin saber la memoria no se limita nada.
+    """
+    total = _memoria_total_gb()
+    if not total:
+        return MAX_LOTES
+    return max(1, int((total - GB_RESERVA) // GB_POR_LOTE))
+
+
 def _cuantos_lotes(p, cuantos_planos):
     """Cuantos procesos de captura correr a la vez."""
     pedidos = int(p.get("lotes") or LOTES_A_LA_VEZ)
@@ -776,14 +832,19 @@ def _cuantos_lotes(p, cuantos_planos):
     # de 8 vCPU: medido ahi con medir_render, 4 procesos dan 6,75 fotogramas/s
     # y 8 dan 10,40 -- un 54 % mas por no dejar nucleos parados. Con
     # ESTUDIO_LOTES sin poner no cambia nada de lo que habia.
+    #
+    # Y LOS DOS, CON EL TOPE DE LA MEMORIA (`_tope_por_memoria`). Lo que se pide
+    # a mano para un video (`lotes`) manda tal cual: es una decision de alguien.
     forzado = 0
     try:
         forzado = int(os.environ.get("ESTUDIO_LOTES") or 0)
     except ValueError:
         forzado = 0
+    tope = _tope_por_memoria()
     if forzado > 0:
-        return max(1, min(forzado, MAX_LOTES, cuantos_planos))
-    return max(1, min(MAX_LOTES, (os.cpu_count() or 2) // 2, cuantos_planos))
+        return max(1, min(forzado, MAX_LOTES, tope, cuantos_planos))
+    return max(1, min(MAX_LOTES, (os.cpu_count() or 2) // 2, tope,
+                      cuantos_planos))
 
 
 def _repartir_lotes(pendientes, cuantos):

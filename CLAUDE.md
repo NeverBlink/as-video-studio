@@ -1,9 +1,11 @@
 # AS Video Studio — lo que hay que saber antes de tocarlo
 
 Lee primero [README.md](README.md): qué es, cómo se arranca y cómo está montado.
-Y si vienes a retomar sin contexto, [docs/RETOMAR.md](docs/RETOMAR.md): el
-estado al cerrar, qué está desplegado y **los fallos que se encontraron con su
-causa** — el sitio donde mirar antes de volver a tocar algo.
+Y si vienes a retomar sin contexto, `docs/RETOMAR.md`: el estado al cerrar, qué
+está desplegado y **los fallos que se encontraron con su causa** — el sitio
+donde mirar antes de volver a tocar algo. **Es un fichero LOCAL**: está en el
+`.gitignore` porque son notas internas (despliegues, cuentas), así que solo
+existe en la máquina de quien lo desarrolla, no en el repositorio público.
 
 Esto es lo otro — lo que no se deduce leyendo el código y cuesta dinero o una
 tarde averiguar.

@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Configuracion central. Todo lo sensible viene de variables de entorno
- * (systemd las inyecta desde /opt/studio-videos-ia/app/.env).
+ * (systemd las inyecta desde /opt/as-video-studio/login/.env).
  */
 const path = require('path');
 

@@ -83,12 +83,21 @@ comprobaciones() {
   [ "$(id -u)" -eq 0 ] || fallo "Hay que ser root. En la consola del VPS, entra como 'root'."
 
   . /etc/os-release 2>/dev/null || fallo "No reconozco este sistema operativo."
+  # SOLO 24.04. Se aceptaba tambien 22.04 y la instalacion moria SIEMPRE a mitad,
+  # en «las librerias de Python»: 22.04 trae Python 3.10 y las librerias fijadas
+  # (numpy entre ellas) piden 3.12. Mejor decirlo aqui, antes de tocar nada.
   case "${ID:-}:${VERSION_ID:-}" in
-    ubuntu:24.04|ubuntu:22.04) bien "Ubuntu $VERSION_ID" ;;
-    ubuntu:*) aviso "Ubuntu $VERSION_ID no esta probado (van 22.04 y 24.04). Sigo." ;;
+    ubuntu:24.04) bien "Ubuntu $VERSION_ID" ;;
+    ubuntu:22.04|ubuntu:20.04|ubuntu:18.04)
+      fallo "Esto necesita Ubuntu 24.04 y aqui hay $VERSION_ID: su Python es demasiado viejo para el estudio. En el panel de tu VPS, reinstala el sistema eligiendo Ubuntu 24.04 (en Hostinger: Sistema operativo, Cambiar) y vuelve a pegar la linea." ;;
+    ubuntu:*) aviso "Ubuntu $VERSION_ID no esta probado (lo probado es 24.04). Sigo." ;;
     debian:*) aviso "Debian no esta probado; el navegador puede dar guerra. Sigo." ;;
-    *) fallo "Esto necesita Ubuntu 22.04 o 24.04. Aqui hay ${PRETTY_NAME:-algo desconocido}." ;;
+    *) fallo "Esto necesita Ubuntu 24.04. Aqui hay ${PRETTY_NAME:-algo desconocido}." ;;
   esac
+  # Y LO QUE DE VERDAD IMPORTA, mirado directamente: el Python del sistema.
+  # Cubre las versiones de arriba que no estan en la lista.
+  python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null \
+    || fallo "El Python de este sistema es $(python3 --version 2>&1 | awk '{print $2}') y el estudio necesita 3.12 o mas nuevo. Reinstala el VPS con Ubuntu 24.04 y vuelve a pegar la linea."
 
   [ "$(uname -m)" = "x86_64" ] || fallo "Hace falta un procesador x86_64 (este es $(uname -m)): el navegador que dibuja los planos no existe para esta arquitectura."
 
@@ -375,18 +384,13 @@ descargar_codigo() {
   # rsync con --delete y no un tar por encima: un tar SUPERPONE y no borra nada,
   # asi que un fichero que llego ahi por accidente no se va nunca. Los datos
   # viven fuera de app/, asi que aqui no hay nada que conservar salvo la cache.
+  #
+  # Las reglas de dibujo (motores/reglas/reglas_casa.json) van con el resto: son
+  # codigo, nadie las reescribe en la maquina, y tienen que poder actualizarse.
   rsync -a --delete \
     --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
     --exclude='cache/' --exclude='proyectos/' --exclude='banco/' --exclude='secretos/' \
-    --exclude='motores/reglas/reglas.json' \
     "$origen/" "$RAIZ/app/"
-
-  # Las reglas de dibujo son el unico fichero del arbol de codigo que la
-  # aplicacion REESCRIBE: el destilador las aprende del feedback y las guarda
-  # ahi. Viaja una por defecto, pero solo se pone si no habia ninguna — si no,
-  # cada actualizacion le borraria al usuario lo que ha aprendido su estudio.
-  [ -f "$RAIZ/app/motores/reglas/reglas.json" ] \
-    || cp "$origen/motores/reglas/reglas.json" "$RAIZ/app/motores/reglas/reglas.json"
 
   # El login es una aplicacion aparte (Node) y vive fuera del arbol del estudio.
   rsync -a --delete --exclude='node_modules' --exclude='datos' --exclude='.env' \
@@ -412,8 +416,17 @@ entorno_python() {
 
   # El entorno de la cuenta: donde vive cada cosa. Los datos van FUERA del
   # arbol de codigo, que es lo que permite actualizar sin tocarlos.
-  local lotes
+  # Y LOS QUE QUEPAN EN LA MEMORIA: medido, un lote llega a ~2,4 GB en su peor
+  # momento (ffmpeg codificando mas el navegador). Un lote por nucleo cuadra en
+  # los VPS de Hostinger (4 GB por nucleo), pero en uno de 4 nucleos y 8 GB el
+  # render se quedaria sin memoria a media tanda. El estudio vuelve a aplicar
+  # este tope al renderizar (`p8_render._tope_por_memoria`).
+  local lotes por_memoria mem_mb
   lotes="$(nproc)"
+  mem_mb=$(( $(awk '/MemTotal/{print $2}' /proc/meminfo) / 1024 ))
+  por_memoria=$(( (mem_mb - 2048) * 10 / 24576 ))
+  [ "$por_memoria" -lt 1 ] && por_memoria=1
+  [ "$lotes" -gt "$por_memoria" ] && lotes="$por_memoria"
   [ "$lotes" -gt 16 ] && lotes=16
   if [ ! -f "$RAIZ/datos/entorno" ]; then
     cat > "$RAIZ/datos/entorno" <<ENTORNO

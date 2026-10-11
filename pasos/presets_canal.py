@@ -64,6 +64,7 @@ unos fotogramas y un parrafo. Se ensenan juntos en la misma pantalla, pero cada
 uno dice lo que es.
 """
 import copy
+import hashlib
 import os
 import re
 import shutil
@@ -669,50 +670,31 @@ def es_propio_de_canal(nombre):
             or (nombre.startswith("muestra") and nombre.endswith(".png")))
 
 
-def _apartar_propios(pid):
-    """Se lleva a un lado lo que el canal tiene en propiedad. -> carpeta o ''.
+def _sitio_libre(carpeta, nombre, origen):
+    """Donde dejar `origen` dentro de `carpeta` sin pisar otro fichero. -> ruta
 
-    SEMBRAR EL ESTILO BORRA LA CARPETA ENTERA y la rehace desde los fotogramas
-    (el `shutil.rmtree(destino)` de mas abajo), asi que todo lo que no sea un
-    fotograma se pierde en cada guardado. En el PRIMERO no se nota --las muestras
-    se copian despues, al congelar el preset-- pero el segundo se las llevaba por
-    delante: cambiar el nombre, mover el ritmo o tocar un mando de voz dejaba la
-    ficha diciendo `muestra1.png` con la carpeta sin ninguna. O sea el banner del
-    estilo en blanco, y la tarjeta de la galeria con un fotograma crudo en vez de
-    con su 2x2.
+    El nombre que toca si esta libre o si ya tiene ESTE mismo contenido (copiarlo
+    otra vez no cambiaria nada); si lo ocupa otra imagen, el mismo nombre con la
+    huella del contenido detras. Pisarla seria cambiarle la referencia a un video
+    que la tenga guardada.
     """
-    carpeta = carpeta_de(pid)
-    if not os.path.isdir(carpeta):
-        return ""
-    nombres = [n for n in sorted(os.listdir(carpeta)) if es_propio_de_canal(n)]
-    if not nombres:
-        return ""
-    aparte = f"{carpeta}.propios"
-    shutil.rmtree(aparte, ignore_errors=True)
-    try:
-        os.makedirs(aparte, exist_ok=True)
-        for nombre in nombres:
-            shutil.copyfile(os.path.join(carpeta, nombre),
-                            os.path.join(aparte, nombre))
-    except OSError:
-        shutil.rmtree(aparte, ignore_errors=True)
-        return ""
-    return aparte
+    final = os.path.join(carpeta, nombre)
+    if not os.path.exists(final) or _mismo_contenido(final, origen):
+        return final
+    with open(origen, "rb") as fh:
+        huella = hashlib.sha1(fh.read()).hexdigest()[:8]
+    base, extension = os.path.splitext(nombre)
+    return os.path.join(carpeta, f"{base}_{huella}{extension}")
 
 
-def _devolver_propios(pid, aparte):
-    """Las devuelve a la carpeta ya rehecha, y limpia el rincon."""
-    if not aparte or not os.path.isdir(aparte):
-        return
-    carpeta = carpeta_de(pid)
+def _mismo_contenido(una, otra):
     try:
-        os.makedirs(carpeta, exist_ok=True)
-        for nombre in sorted(os.listdir(aparte)):
-            shutil.copyfile(os.path.join(aparte, nombre),
-                            os.path.join(carpeta, nombre))
+        if os.path.getsize(una) != os.path.getsize(otra):
+            return False
+        with open(una, "rb") as fa, open(otra, "rb") as fb:
+            return fa.read() == fb.read()
     except OSError:
-        pass            # lo que se pierde es el banner, no el preset
-    shutil.rmtree(aparte, ignore_errors=True)
+        return False
 
 
 def _sembrar_ficheros(tipo, pid, datos, miniatura, anterior):
@@ -723,29 +705,25 @@ def _sembrar_ficheros(tipo, pid, datos, miniatura, anterior):
     """
     if tipo == "canal":
         ruta = ""
-        # apartadas ANTES de sembrar el estilo --que es quien borra la carpeta--
-        # y devueltas justo despues. El porque, en `_apartar_propios`. En un
-        # preset nuevo no hay carpeta todavia y devuelve '' sin hacer nada.
-        aparte = _apartar_propios(pid)
+        # Las muestras y la miniatura (`es_propio_de_canal`) ya no hay que
+        # apartarlas antes de sembrar el estilo: sembrar ya no borra la carpeta
+        # (ver mas abajo), asi que se quedan donde estan.
         if datos.get("estilo"):
             # el estilo de dentro de un canal necesita lo mismo que uno suelto
             dentro, ruta = _sembrar_ficheros("estilo", pid, datos["estilo"],
                                              miniatura, None)
             datos = dict(datos, estilo=dentro)
-        _devolver_propios(pid, aparte)
         # LA MINIATURA PROPIA. Un canal del modo light no se ensena con uno de
         # sus fotogramas de referencia: se ensena con la muestra 2x2 que se
         # genero a proposito, con sus cartelas y su subtitulo puestos. O sea que
         # la miniatura NO esta entre las referencias, y hay que copiarla aparte.
-        # Va DESPUES de sembrar el estilo porque esa siembra rehace la carpeta
-        # entera del preset.
         propia = str(miniatura or "").strip()
         destino = os.path.join(carpeta_de(pid), "miniatura.png")
         if propia and os.path.exists(propia) and propia not in (
                 datos.get("estilo") or {}).get("referencias", []):
             if os.path.abspath(propia) == os.path.abspath(destino):
-                # la que acabamos de devolver: copiar un fichero sobre si mismo
-                # revienta con SameFileError. Ya esta donde tiene que estar.
+                # la que ya estaba: copiar un fichero sobre si mismo revienta
+                # con SameFileError. Ya esta donde tiene que estar.
                 ruta = destino
             else:
                 os.makedirs(os.path.dirname(destino), exist_ok=True)
@@ -755,8 +733,8 @@ def _sembrar_ficheros(tipo, pid, datos, miniatura, anterior):
                 except OSError:
                     pass     # sin cara se sigue: el preset vale igual
         elif os.path.isfile(destino):
-            # la 2x2 que se aparto y volvio: la ficha vuelve a apuntar a ella en
-            # vez de caer al primer fotograma, que es lo que hacia antes
+            # la 2x2 que ya tenia: la ficha vuelve a apuntar a ella en vez de
+            # caer al primer fotograma
             ruta = destino
         return datos, ruta
     if tipo != "estilo":
@@ -772,32 +750,43 @@ def _sembrar_ficheros(tipo, pid, datos, miniatura, anterior):
         raise ErrorPreset("estos fotogramas no estan en el disco del servidor: "
                           + ", ".join(faltan[:5]))
 
+    # LA CARPETA DEL PRESET YA NO SE REHACE: SOLO CRECE. Antes se copiaba todo a
+    # `<carpeta>.nuevo` con un prefijo `NN_` y se cambiaba por la vieja de golpe.
+    # Como las referencias de un preset guardado YA viven en su carpeta, cada
+    # guardado --cambiar el nombre, mover el ritmo, tocar la voz-- las volvia a
+    # copiar con otro prefijo (`00_cara.png` -> `00_00_cara.png`) y borraba las
+    # anteriores. Y los videos hechos con ese estilo guardan esas rutas en sus
+    # params: desde ese guardado no podian dibujar ni corregir un solo plano
+    # («ninguna de las imagenes de estilo existe en el disco»).
+    #
+    # Ahora lo que ya esta dentro se queda con su nombre, lo nuevo se anade sin
+    # pisar nada (`_sitio_libre`) y nada se borra: un video viejo puede seguir
+    # apuntando a una lamina que el estilo ya no usa. Si algo falla a mitad, el
+    # preset anterior sigue entero, que es lo que buscaba la carpeta `.nuevo`.
     destino = carpeta_de(pid)
-    # se copia a un lado y solo se sustituye al final: si algo falla a mitad, el
-    # preset anterior sigue entero. Es la misma regla que estilo.extraer
-    trabajo = f"{destino}.nuevo"
-    shutil.rmtree(trabajo, ignore_errors=True)
-    os.makedirs(trabajo, exist_ok=True)
-    copiadas, elegida = [], ""
+    os.makedirs(destino, exist_ok=True)
+    propia = os.path.normcase(os.path.abspath(destino))
+    finales, elegida = [], ""
     referencia_miniatura = str(miniatura or "").strip() or rutas[0]
     try:
         for indice, origen in enumerate(rutas):
-            nombre = f"{indice:02d}_{os.path.basename(origen)}"
-            final = os.path.join(trabajo, nombre)
-            shutil.copyfile(origen, final)
-            copiadas.append(final)
-            if os.path.abspath(origen) == os.path.abspath(referencia_miniatura):
+            absoluto = os.path.abspath(origen)
+            if os.path.normcase(os.path.dirname(absoluto)) == propia:
+                final = absoluto           # ya es suya: ni se copia ni se renombra
+            else:
+                final = _sitio_libre(destino,
+                                     f"{indice:02d}_{os.path.basename(origen)}",
+                                     origen)
+                if not os.path.exists(final):
+                    temporal = final + ".tmp"
+                    shutil.copyfile(origen, temporal)
+                    os.replace(temporal, final)
+            finales.append(final)
+            if absoluto == os.path.abspath(referencia_miniatura):
                 elegida = final
     except OSError as fallo:
-        shutil.rmtree(trabajo, ignore_errors=True)
         raise ErrorPreset(f"no se han podido copiar los fotogramas al banco: {fallo}")
-
-    shutil.rmtree(destino, ignore_errors=True)
-    os.makedirs(os.path.dirname(destino), exist_ok=True)
-    shutil.move(trabajo, destino)
-    # las rutas definitivas son las del banco, no las de donde salieron
-    finales = [os.path.join(destino, os.path.basename(r)) for r in copiadas]
-    elegida = os.path.join(destino, os.path.basename(elegida)) if elegida else finales[0]
+    elegida = elegida or finales[0]
     datos = dict(datos, referencias=finales)
 
     # Las laminas dibujadas se guardan CON el preset, no solo se referencian.

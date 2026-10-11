@@ -80,7 +80,7 @@ TAREAS = [
     # ------------------------------------------------------------- Origen
     {"id": "ingesta", "nombre": "El material de origen", "pestana": "origen",
      "paso": "ingesta", "necesita": [], "cuesta": False, "opcional": False,
-     "porque": "baja el vídeo y los subtítulos, y saca los fotogramas"},
+     "porque": "lee el material que has escrito y lo parte en párrafos"},
 
     # -------------------------------------------------------------- Guion
     {"id": "brief", "nombre": "El presupuesto de palabras", "pestana": "guion",
@@ -241,9 +241,10 @@ FAMILIAS = {
 
 PUBLICO = {
     "ingesta": {
-        "nombre": "Extrayendo el vídeo",
-        "fases": ["recogiendo el vídeo", "separando lo que se ve y lo que se dice",
-                  "guardando los momentos que sirven"],
+        # el material es TEXTO: aqui decia «Extrayendo el vídeo», de cuando
+        # el material era un video de YouTube
+        "nombre": "Leyendo el material",
+        "fases": ["leyendo lo que has escrito", "partiéndolo en párrafos"],
     },
     "brief": {
         "nombre": "Midiendo el vídeo",

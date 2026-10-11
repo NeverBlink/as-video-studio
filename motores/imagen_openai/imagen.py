@@ -28,6 +28,11 @@ import requests
 from PIL import Image
 
 API_URL = "https://api.openai.com/v1/images/edits"
+#: SIN ADJUNTOS SE PIDE AQUI. /edits exige al menos una imagen --sin ellas la
+#: peticion sale como formulario normal y la API contesta «Unsupported content
+#: type»--, y /generations es la misma API para dibujar solo con texto: mismo
+#: modelo, mismos tamanos y calidades, y la misma respuesta en b64_json.
+API_URL_SIN_REFS = "https://api.openai.com/v1/images/generations"
 MODELO = "gpt-image-2"
 
 PRECIO = {"low": 0.006, "medium": 0.041, "high": 0.165}
@@ -113,6 +118,130 @@ _CABECERAS_VISTAS = [False]
 #: El tope que enseño un 429. Una respuesta buena no puede subir por encima.
 _TECHO_DEL_429 = [None]
 
+# ------------------------------------------------------------ lo que se aprende
+#
+# EL CUBO SE QUEDABA EN 5 PARA SIEMPRE. El 5 salio de un 429 («input-images per
+# min: Limit 5»), y el cubo solo cambia si la API manda cabeceras
+# `x-ratelimit-*` (no las manda para imagenes) o si salta otro 429 -- que el
+# propio cubo impide --. O sea que si una cuenta subia de nivel, el Estudio no se
+# enteraba nunca: con cuatro adjuntos por plano, como mucho un plano por minuto.
+#
+# Ahora cada cuenta TANTEA: si va justa (ha tenido que esperar al cubo) y la API
+# no la ha frenado, sube su limite un 50 % como mucho una vez por minuto. Del
+# primer 429 aprende el techo de verdad -- lo dice el mensaje, «Limit N» -- y ya
+# no lo vuelve a pasar. Lo aprendido se guarda en disco (sin la clave: por su
+# huella) para no tantear otra vez en cada arranque, y un techo de mas de una
+# semana se vuelve a tantear, porque las cuentas de OpenAI suben de nivel con el
+# gasto. Un 429 no se cobra: tantear cuesta una espera, no dinero.
+#
+# SOLO DESDE LLAMADAS DE VERDAD (`generar`). Las suites llaman a `_calibrar` y a
+# `_motivo_limite` con respuestas de mentira, y eso no puede quedar escrito en
+# disco como el limite de una cuenta real. El fichero vive con los SECRETOS
+# (`RUTA_LIMITES`, mas abajo) y no junto a este motor: actualizar el programa
+# borra lo que haya en su arbol, y esto es un dato de la instalacion.
+#: Hasta donde se tantea sin que la API haya dicho nada.
+LIMITE_DE_TANTEO = 60
+#: Cada cuanto puede subir una cuenta, y cuanto se queda quieta tras un 429.
+SUBIR_CADA_S = 60.0
+QUIETA_TRAS_429_S = 600.0
+#: Un techo aprendido caduca: pasado esto se vuelve a tantear.
+TECHO_CADUCA_S = 7 * 24 * 3600.0
+_CANDADO_LIMITES = threading.Lock()
+
+
+def _huella_de(clave):
+    """Como se guarda una cuenta en disco: por la huella de su clave, nunca la clave."""
+    return hashlib.sha256(str(clave or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _limites_guardados():
+    try:
+        with open(RUTA_LIMITES, encoding="utf-8") as fh:
+            datos = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return datos if isinstance(datos, dict) else {}
+
+
+def _recordar_limite(cuenta):
+    """Apunta en disco lo aprendido de ESA cuenta. Nunca tumba una llamada."""
+    try:
+        with _CANDADO_LIMITES:
+            datos = _limites_guardados()
+            datos[_huella_de(cuenta.clave)] = {
+                "cuenta": cuenta.nombre.split(" (")[0],
+                "limite": int(cuenta.limite[0]),
+                "techo": cuenta.techo[0],
+                "techo_desde": cuenta.techo_desde,
+                "fecha": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            os.makedirs(os.path.dirname(RUTA_LIMITES), exist_ok=True)
+            temporal = RUTA_LIMITES + ".tmp"
+            with open(temporal, "w", encoding="utf-8") as fh:
+                json.dump(datos, fh, ensure_ascii=False, indent=1)
+            os.replace(temporal, RUTA_LIMITES)
+    except Exception as fallo:                              # noqa: BLE001
+        print(f"[imagen] no se ha podido guardar el limite aprendido: {fallo}",
+              flush=True)
+
+
+def _aplicar_lo_aprendido(cuenta):
+    """Arranca la cuenta con lo que ya se sabia de ella, si se sabia algo."""
+    ficha = _limites_guardados().get(_huella_de(cuenta.clave))
+    if not isinstance(ficha, dict):
+        return
+    try:
+        limite = int(ficha.get("limite") or 0)
+        techo = int(ficha["techo"]) if ficha.get("techo") else None
+        desde = float(ficha.get("techo_desde") or 0.0)
+    except (TypeError, ValueError):
+        return
+    if techo and time.time() - desde > TECHO_CADUCA_S:
+        techo = None                     # caducado: se vuelve a tantear
+    if limite >= 1:
+        cuenta.limite[0] = min(limite, techo) if techo else limite
+    if techo:
+        cuenta.techo[0] = techo
+        cuenta.techo_desde = desde
+
+
+def _quizas_subir(cuenta):
+    """Sube el limite de una cuenta que va justa y a la que nadie ha frenado."""
+    if cuenta.vistas[0]:
+        return                           # las cabeceras dicen el limite real
+    ahora = time.monotonic()
+    actual = int(cuenta.limite[0])
+    techo = cuenta.techo[0]
+    if (techo and actual >= techo) or actual >= LIMITE_DE_TANTEO:
+        return
+    if ahora - cuenta.saturada_en > _VENTANA_S:
+        return                           # no iba justa: subir no aceleraria nada
+    if ahora - cuenta.subida_en < SUBIR_CADA_S:
+        return
+    if ahora - cuenta.frenada_en < QUIETA_TRAS_429_S:
+        return
+    nuevo = min(LIMITE_DE_TANTEO, actual + max(1, actual // 2))
+    if techo:
+        nuevo = min(nuevo, techo)
+    if nuevo <= actual:
+        return
+    cuenta.anterior = actual
+    cuenta.limite[0] = nuevo
+    cuenta.subida_en = ahora
+    print(f"[imagen] {cuenta.nombre}: sin freno de la API, el ritmo sube de "
+          f"{actual} a {nuevo} imagenes de entrada por minuto", flush=True)
+    _recordar_limite(cuenta)
+
+
+def _aprender_del_429(cuenta, techo_antes):
+    """Tras un 429 de velocidad: quieta un rato y, si no dijo su tope, un paso atras."""
+    cuenta.frenada_en = time.monotonic()
+    if cuenta.techo[0] and cuenta.techo[0] != techo_antes:
+        cuenta.techo_desde = time.time()   # `_motivo_limite` leyo «Limit N»
+    elif cuenta.anterior:
+        cuenta.limite[0] = cuenta.anterior
+    cuenta.anterior = None
+    _recordar_limite(cuenta)
+
 
 class _Cuenta:
     """El estado de UNA cuenta de OpenAI: su clave, su cubo y su freno.
@@ -142,6 +271,14 @@ class _Cuenta:
         # (`_cuentas` rehace la lista al cambiar su sello). Antes un 401 de UNA
         # de las tres cuentas tumbaba la tanda entera (02-09-2026).
         self.clave_rechazada = False
+        # EL TANTEO DEL LIMITE (ver «lo que se aprende»): cuando tuvo que
+        # esperar al cubo por ultima vez, cuando subio, cuando la freno un 429,
+        # desde cuando sabe su techo y a que valor volver si el tanteo se paso.
+        self.saturada_en = -1e9
+        self.subida_en = -1e9
+        self.frenada_en = -1e9
+        self.techo_desde = 0.0
+        self.anterior = None
 
     @property
     def sin_saldo(self):
@@ -195,6 +332,9 @@ CARPETA_SECRETOS = os.environ.get("ESTUDIO_SECRETOS") or os.path.join(
     "secretos")
 RUTA_CLAVES = os.path.join(CARPETA_SECRETOS, "claves.json")
 RUTA_ENV = os.path.join(CARPETA_SECRETOS, ".env")
+#: Lo que el cubo ha aprendido de cada cuenta (ver «lo que se aprende»): con los
+#: datos de la instalacion, no con el programa, para que actualizar no lo borre.
+RUTA_LIMITES = os.path.join(CARPETA_SECRETOS, "limites_aprendidos.json")
 
 #: Cuanto se deja fuera del reparto una cuenta que dijo "sin credito". No es
 #: para siempre a proposito: una cuenta que se agoto a las diez y se recargo a
@@ -322,6 +462,8 @@ def _cuentas():
             cuenta.sin_saldo_desde = gastadas[clave]
         if clave in rechazadas:
             cuenta.clave_rechazada = True
+        # el ritmo que ya se le conocia, para no tantear de cero en cada arranque
+        _aplicar_lo_aprendido(cuenta)
         nuevas.append(cuenta)
 
     _CUENTAS_CARGADAS[:] = nuevas
@@ -399,6 +541,8 @@ def _pedir_ficha(cuantas=1, cuenta=None):
                 cuenta.llamadas.append((ahora, cuantas))
                 return
             espera = _VENTANA_S - (ahora - cuenta.llamadas[0][0]) + 0.05
+            # va justa: es la señal para tantear un limite mas alto
+            cuenta.saturada_en = ahora
         time.sleep(min(max(espera, 0.05), _VENTANA_S))
 
 
@@ -593,18 +737,15 @@ def _al_dia(destino, origen):
 
 def generar(prompt, referencias, *, quality="low", tamano="apaisado",
             api_key=None, reintentos=6):
-    # Sin referencias esta llamada NO se puede hacer, y hay que decirlo aqui.
-    # Motivo: requests solo pone 'multipart/form-data' cuando files no esta
-    # vacio; con la lista vacia cae a 'x-www-form-urlencoded', que es justo lo
-    # que /v1/images/edits rechaza. El sintoma era un 400 de la API diciendo
-    # "Unsupported content type", que suena a fallo del servidor y manda a
-    # buscar al sitio equivocado, cuando lo que pasa es que falta una entrada.
-    if not referencias:
-        raise ValueError(
-            "generar() necesita al menos una imagen de referencia: la API de "
-            "edicion de imagenes se llama con adjuntos, y sin ellos la peticion "
-            "sale con el formato equivocado y la rechaza con un error que no "
-            "explica nada. Pon al menos una imagen de estilo.")
+    # SIN REFERENCIAS SE DIBUJA SOLO CON EL TEXTO, por /generations. Aqui habia
+    # un ValueError: requests solo pone 'multipart/form-data' cuando `files` no
+    # esta vacio, asi que una lista vacia mandada a /edits salia como formulario
+    # normal y la API contestaba «Unsupported content type», que manda a buscar
+    # al sitio equivocado. El guardian lo explicaba bien, pero dejaba roto a
+    # quien llamaba asi A PROPOSITO -- las laminas de un estilo nuevo
+    # (`moodboard.dibujar_desde_guia`) --, y crear un estilo fallaba siempre.
+    # Ahora cada lista va a la API que le toca y las dos responden igual.
+    referencias = list(referencias or [])
     faltan = [r for r in referencias if not os.path.exists(r)]
     if faltan:
         raise ValueError("estas imagenes de referencia no existen: "
@@ -628,17 +769,24 @@ def generar(prompt, referencias, *, quality="low", tamano="apaisado",
         # del otro lado.
         _pedir_ficha(len(referencias), cuenta)
         abiertos, archivos = [], []
+        cabeceras = {"Authorization": f"Bearer {cuenta.clave}"}
         try:
-            for ruta in referencias:
-                fh = open(ruta, "rb")
-                abiertos.append(fh)
-                archivos.append(("image[]", (os.path.basename(ruta), fh, "image/png")))
-            datos = {"model": MODELO, "prompt": prompt,
-                     "size": TAMANOS[tamano], "quality": quality, "n": "1"}
             t0 = time.time()
-            r = requests.post(API_URL,
-                              headers={"Authorization": f"Bearer {cuenta.clave}"},
-                              data=datos, files=archivos, timeout=600)
+            if referencias:
+                for ruta in referencias:
+                    fh = open(ruta, "rb")
+                    abiertos.append(fh)
+                    archivos.append(("image[]", (os.path.basename(ruta), fh,
+                                                 "image/png")))
+                datos = {"model": MODELO, "prompt": prompt,
+                         "size": TAMANOS[tamano], "quality": quality, "n": "1"}
+                r = requests.post(API_URL, headers=cabeceras, data=datos,
+                                  files=archivos, timeout=600)
+            else:
+                datos = {"model": MODELO, "prompt": prompt,
+                         "size": TAMANOS[tamano], "quality": quality, "n": 1}
+                r = requests.post(API_URL_SIN_REFS, headers=cabeceras,
+                                  json=datos, timeout=600)
             segundos = time.time() - t0
         finally:
             for fh in abiertos:
@@ -656,6 +804,9 @@ def generar(prompt, referencias, *, quality="low", tamano="apaisado",
             png = base64.b64decode(payload["data"][0]["b64_json"])
             _gasto["usd"] += PRECIO[quality]
             _gasto["llamadas"] += 1
+            # si iba justa y nadie la frena, se tantea un ritmo mas alto
+            if cuenta_fija is None:
+                _quizas_subir(cuenta)
             # 'usage' es el unico recuento real de tokens de esta llamada y solo
             # existe aqui: se devuelve tal cual para que el medidor no lo estime
             return png, {"segundos": round(segundos, 1), "quality": quality,
@@ -706,7 +857,11 @@ def generar(prompt, referencias, *, quality="low", tamano="apaisado",
             # el freno es de todas las cadenas DE ESA CUENTA: si lo pone una,
             # las demas tampoco salen a llamar con esa clave hasta que su
             # ventana se renueve; el proximo intento puede elegir otra cuenta
+            techo_antes = cuenta.techo[0]
             _frenar(_cuanto_esperar(r), _motivo_limite(r, cuenta), cuenta)
+            # y lo que dijo, aprendido y guardado (ver «lo que se aprende»)
+            if cuenta_fija is None:
+                _aprender_del_429(cuenta, techo_antes)
             continue
         if r.status_code in (500, 502, 503, 504) and intento < reintentos:
             time.sleep(min(3 * (intento + 1), 30))

@@ -103,6 +103,20 @@ def prueba_prompt():
     comprobar(all("," not in v for v in vetos),
               "ninguna regla lleva comas: la orden las une con comas")
 
+    # EN EL SERVIDOR LAS CLAVES VIVEN FUERA DEL CODIGO (datos/secretos), y el
+    # veto de `<raiz>/secretos` no las alcanzaba
+    antes = os.environ.get("ESTUDIO_SECRETOS")
+    os.environ["ESTUDIO_SECRETOS"] = "/opt/as-video-studio/datos/secretos"
+    try:
+        vetos = asistente.vetos_de_lectura("/opt/as-video-studio/app")
+    finally:
+        if antes is None:
+            os.environ.pop("ESTUDIO_SECRETOS", None)
+        else:
+            os.environ["ESTUDIO_SECRETOS"] = antes
+    comprobar(any("datos/secretos/**" in v for v in vetos),
+              f"veta tambien la carpeta de secretos de ESTUDIO_SECRETOS: {vetos}")
+
 
 def prueba_orden():
     seccion("2] lo que de verdad se le pasa a cli_claude")

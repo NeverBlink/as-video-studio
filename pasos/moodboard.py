@@ -60,6 +60,7 @@ solo eje de un moodboard ya aprobado se llevaba por delante los otros cinco
 de un estilo mezcla las dos carpetas: de cada eje manda la propuesta si la hay,
 que es lo ultimo dibujado y lo que esta pendiente de mirar.
 """
+import hashlib
 import math
 import os
 import shutil
@@ -649,30 +650,101 @@ def importar(carpeta, clave, raiz=None):
     return {"clave": clave, "ejes": devueltos, "carpeta": destino}
 
 
-# ---------------------------------------------- estilo DESCRITO, sin fotogramas
+# ------------------------------------------------ estilo DESCRITO, con imagenes
 #
-# En modo light el canal puede describir su estilo con palabras en vez de dar un
-# video. Entonces no hay fotogramas reales, y todo lo de arriba --la clave por
-# contenido, el banco compartido, el aprobado-- deja de tener sentido: la clave
-# de un moodboard es la huella de SUS FOTOGRAMAS, y aqui no hay ninguno.
+# En modo light el canal da su estilo con unas imagenes sueltas --y, si quiere,
+# unas indicaciones--, no con un video. No hay fotogramas, asi que lo de arriba
+# --la clave por contenido, el banco compartido, el aprobado-- no aplica: la
+# clave de un moodboard es la huella de SUS FOTOGRAMAS, y aqui no hay ninguno.
 #
-# Lo que si tiene sentido es dibujar los mismos ejes a partir de la guia escrita,
-# y que esas laminas pasen a ser las REFERENCIAS del estilo. No hay moodboard
-# encima de nada: las laminas dibujadas son el material de referencia, y desde
-# ahi todo lo de abajo (la lamina de p6, la hoja de personaje, cada plano)
-# funciona sin enterarse de que no vienen de ningun video.
+# Lo que si se hace es lo mismo que con un video: dibujar los ejes a partir de
+# la guia escrita CON LAS IMAGENES DEL CANAL DELANTE, montadas en una lamina
+# como los fotogramas reales de `generar`. Esas laminas pasan a ser las
+# REFERENCIAS del estilo, y desde ahi todo lo de abajo (la lamina de p6, la hoja
+# de personaje, cada plano) funciona sin enterarse de que no vienen de un video.
 #
-# Y NO se escribe la guia mirandolas despues. Seria describir una copia, que es
-# justo lo que la cabecera de este modulo dice que no se haga nunca: la guia sale
-# de las palabras del canal y las laminas salen de la guia, en ese orden.
+# SE DIBUJABAN SIN ADJUNTOS, y estaba mal por dos lados. El motor de imagen no
+# aceptaba una lista vacia, asi que crear un estilo fallaba SIEMPRE con
+# «generar() necesita al menos una imagen de referencia» (octubre de 2026, las
+# incidencias de GitHub). Y aunque la hubiera aceptado, una lamina dibujada solo
+# con palabras se inventa todo lo que la guia no diga, que es justo el motivo por
+# el que un estilo exige imagenes y no un parrafo (`presets_light.validar_encargo`).
+# Sin ninguna imagen --un estilo de antes, una llamada desde fuera-- se sigue
+# dibujando solo con la guia, que el motor ya sabe pedir sin adjuntos.
+#
+# Y NO se escribe la guia mirando las laminas despues. Seria describir una copia,
+# que es justo lo que la cabecera de este modulo dice que no se haga nunca: la
+# guia sale de las imagenes del canal, y las laminas de la guia y de esas mismas
+# imagenes, en ese orden.
+
+#: Cuantas imagenes del canal caben en la lamina que acompana a cada dibujo. Se
+#: pueden subir veinticuatro, y con todas en una hoja cada una saldria tan
+#: pequena que ya no ensena el trazo: pasado este numero se toman repartidas.
+MAX_APORTADAS_EN_LAMINA = 12
+
+
+def _montar_aportadas(rutas, destino):
+    """Las imagenes del canal en UNA lamina, para adjuntarla. -> ruta o None
+
+    No es `_montar`: aquella pone siempre dos columnas, que es lo suyo para seis
+    laminas o unos pocos fotogramas, y con doce imagenes cada una saldria de
+    ochenta pixeles de alto. Aqui la cuadricula se ajusta a cuantas hay, con las
+    casillas lo mas cuadradas que deje la hoja.
+    """
+    from PIL import Image                                   # noqa: PLC0415
+    rutas = list(rutas)
+    if len(rutas) > MAX_APORTADAS_EN_LAMINA:
+        paso = len(rutas) / MAX_APORTADAS_EN_LAMINA
+        rutas = [rutas[int(i * paso)] for i in range(MAX_APORTADAS_EN_LAMINA)]
+    fotos = []
+    for ruta in rutas:
+        try:
+            fotos.append(Image.open(ruta).convert("RGB"))
+        except Exception:                      # noqa: BLE001
+            continue
+    if not fotos:
+        return None
+    columnas = max(1, min(len(fotos), math.ceil(
+        math.sqrt(len(fotos) * TAMANO[0] / TAMANO[1]))))
+    filas = int(math.ceil(len(fotos) / columnas))
+    ancho, alto = TAMANO[0] // columnas, TAMANO[1] // filas
+    hoja = Image.new("RGB", (ancho * columnas, alto * filas), (255, 255, 255))
+    for indice, foto in enumerate(fotos):
+        copia = foto.copy()
+        copia.thumbnail((ancho, alto), Image.LANCZOS)
+        x = (indice % columnas) * ancho + (ancho - copia.width) // 2
+        y = (indice // columnas) * alto + (alto - copia.height) // 2
+        hoja.paste(copia, (x, y))
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    hoja.save(destino, "PNG")
+    return destino
+
+
+def _huella_de_ficheros(rutas):
+    """La huella del CONTENIDO de unos ficheros, en orden. -> str"""
+    suma = hashlib.sha256()
+    for ruta in rutas:
+        with open(ruta, "rb") as fh:
+            suma.update(hashlib.sha256(fh.read()).digest())
+    return suma.hexdigest()[:16]
+
 
 def dibujar_desde_guia(estilo, destino, ejes=None, calidad="medium",
-                       avisar=None, idioma="", peticiones=None):
+                       avisar=None, idioma="", peticiones=None, referencias=None):
     """Dibuja las laminas de un estilo DESCRITO. -> {rutas, ejes, coste_usd}.
 
-    Sin fotogramas de entrada y sin tocar el banco de moodboards: las laminas se
-    dejan en `destino`, que es de quien las pide (el taller de un preset), y lo
-    que devuelve son rutas de ficheros normales.
+    Sin tocar el banco de moodboards: las laminas se dejan en `destino`, que es
+    de quien las pide (el taller de un preset), y lo que devuelve son rutas de
+    ficheros normales.
+
+    'referencias' son las imagenes que dio el canal (las aportadas al taller).
+    Van montadas en UNA lamina adjunta a cada dibujo, como los fotogramas reales
+    en `generar`. Sin ninguna, se dibuja solo con la guia.
+
+    CADA LAMINA RECUERDA LO QUE SE LE PIDIO (`<eje>.json`): si se vuelve a pedir
+    exactamente lo mismo --retomar un taller que fallo a medias-- se queda la que
+    hay y no se paga otra. Cualquier cambio (la guia, la correccion, las
+    imagenes, la calidad) la vuelve a dibujar.
 
     'peticiones' es {eje: "lo que hay que corregir"}, igual que en `generar`, y
     manda sobre la descripcion generica de ese eje. LO MISMO EN LOS DOS CAMINOS
@@ -691,14 +763,26 @@ def dibujar_desde_guia(estilo, destino, ejes=None, calidad="medium",
     peticiones = peticiones or {}
     os.makedirs(destino, exist_ok=True)
 
+    # LAS IMAGENES DEL CANAL, en una lamina. Se normaliza al lado de la hoja
+    # (1536) y no al de un adjunto suelto: es UNA imagen con varias dentro, y
+    # bajarla a 1024 encogeria cada una otro tercio.
+    aportadas = [r for r in (referencias or []) if r and os.path.isfile(r)]
+    refs = []
+    if aportadas:
+        cache = os.path.join(destino, "_refs")
+        lamina = _montar_aportadas(aportadas, os.path.join(cache, "aportadas.png"))
+        if lamina:
+            refs = [imagen.normalizar(lamina, cache, lado_max=TAMANO[0])]
+    huella_refs = _huella_de_ficheros(refs) if refs else ""
+
     # tarde y a proposito, igual que en `generar`: p6_assets importa este modulo
     import p6_assets                                        # noqa: PLC0415
     guia = p6_assets.guia_escrita(estilo)
     if not guia:
         raise RuntimeError(
-            "un estilo descrito no tiene fotogramas, asi que la guia escrita es "
-            "lo unico que describe el dibujo: sin ella las laminas saldrian con "
-            "el estilo por defecto del generador")
+            "falta la guia escrita del estilo, que es lo que describe el dibujo: "
+            "sin ella las laminas saldrian con el estilo por defecto del "
+            "generador. Vuelve a generar el estilo para que se escriba")
     bloque = reglas.bloque_prompt("prompt_imagen")
 
     resultados = [None] * len(pedidos)
@@ -706,24 +790,38 @@ def dibujar_desde_guia(estilo, destino, ejes=None, calidad="medium",
     candado = threading.Lock()
 
     def dibujar(indice, eje):
-        # Encabezado NEUTRO en cuanto al medio: sin fotogramas reales, la guia
-        # escrita es lo unico que dice si este canal se dibuja o se fotografia,
-        # y "draw an illustration" la contradiria de entrada. El camino con
-        # video no pasa por aqui y conserva su encabezado de siempre.
+        # Encabezado NEUTRO en cuanto al medio: la guia escrita y las imagenes
+        # del canal son lo que dice si este canal se dibuja o se fotografia, y
+        # "draw an illustration" las contradiria de entrada. El camino con video
+        # no pasa por aqui y conserva su encabezado de siempre.
+        #
+        # Y EL IDIOMA, que llegaba hasta aqui y no se pasaba: el eje «diagrama»
+        # salia rotulado en ingles en un canal en espanol, y esa lamina viaja
+        # despues dentro de cada plano que lleve un componente.
         prompt = prompt_de_dibujo(
             (EJES.get(eje) or {}).get("prompt") or "", estilo,
             peticiones.get(eje), guia, bloque,
-            con_lamina=False,
+            con_lamina=bool(refs), idioma=idioma,
             encabezado="Produce one single full-frame image for a style "
                        "reference sheet.")
-        # SIN referencias: no hay ninguna que mandar, y mandar una lamina vacia
-        # es lo que provoca el "Unsupported content type" que no dice nada.
-        png, meta = imagen.generar(prompt, [], quality=calidad,
-                                   tamano="apaisado")
         ruta = os.path.join(destino, f"{eje}.png")
-        with open(ruta, "wb") as fh:
-            fh.write(png)
-        resultados[indice] = (eje, ruta, float(meta.get("coste") or 0.0))
+        ruta_ficha = os.path.join(destino, f"{eje}.json")
+        pedido = hashlib.sha256("|".join(
+            (prompt, huella_refs, str(calidad), "apaisado")).encode("utf-8")
+        ).hexdigest()[:16]
+        anterior = medios.leer_json(ruta_ficha, {}) or {}
+        if os.path.exists(ruta) and anterior.get("pedido") == pedido:
+            coste = 0.0                  # ya dibujada con esto mismo: no se paga
+        else:
+            png, meta = imagen.generar(prompt, refs, quality=calidad,
+                                       tamano="apaisado")
+            with open(ruta, "wb") as fh:
+                fh.write(png)
+            medios.escribir_json(ruta_ficha, {"pedido": pedido,
+                                              "calidad": calidad,
+                                              "refs": len(refs)})
+            coste = float(meta.get("coste") or 0.0)
+        resultados[indice] = (eje, ruta, coste)
         with candado:
             hechas[0] += 1
             avisar(hechas[0] / max(1, len(pedidos)),

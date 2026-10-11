@@ -366,8 +366,10 @@ def _avisos(opciones, horquilla, referencia, subida):
         avisos.append(
             f"el material esta en {nombre_idioma(idioma_origen)} y el guion se "
             f"pide en {nombre_idioma(opciones['idioma_salida'])}")
-    if not _frames_utiles(referencia):
-        avisos.append("la ingesta no dejo ningun frame util: no hay referencia visual")
+    # Aqui se avisaba de que «la ingesta no dejo ningun frame util». Era del
+    # material de VIDEO, que este estudio no tiene: el material es texto, asi
+    # que el aviso salia en TODOS los briefs y encima viajaba al guionista
+    # entre los «avisos del brief, tenlos en cuenta».
     return avisos
 
 

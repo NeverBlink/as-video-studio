@@ -22,6 +22,7 @@ import importlib.util
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,7 @@ import threading
 import time
 import types
 import unicodedata
+from pathlib import Path
 
 RAIZ_ESTUDIO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if RAIZ_ESTUDIO not in sys.path:
@@ -1662,6 +1664,98 @@ ESPERA_RASTERIZAR_S = 0.5
 MINIMO_RASTERIZADO_BYTES = 40000
 
 
+#: Cuanto se espera, como mucho, a que el navegador entregue la captura.
+LIMITE_CAPTURA_S = 180
+#: Y cuanto se le deja para salir solo una vez entregada, antes de cerrarlo.
+GRACIA_SALIDA_S = 5.0
+
+
+def _png_entero(ruta):
+    """Si en `ruta` hay un PNG COMPLETO (no a medio escribir)."""
+    try:
+        if os.path.getsize(ruta) <= 0:
+            return False
+        from PIL import Image                                 # noqa: PLC0415
+        with Image.open(ruta) as imagen:
+            imagen.verify()
+        return True
+    except Exception:                                         # noqa: BLE001
+        return False
+
+
+def _terminar_arbol(proceso):
+    """Cierra el navegador Y SUS HIJOS, si sigue vivo.
+
+    Un navegador headless son varios procesos (el principal, el renderizador,
+    el de la GPU). Matar solo el principal deja a los demas sueltos hasta que se
+    dan cuenta, y en una tanda de cientos de capturas eso se acumula. En Windows
+    se cierra el arbol con taskkill; en Linux y Mac el navegador va en su propio
+    grupo de procesos (`_capturar`) y se le manda la senal al grupo entero.
+    """
+    if proceso.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proceso.pid), "/T", "/F"],
+                           capture_output=True, timeout=15, **SIN_VENTANA)
+        else:
+            os.killpg(proceso.pid, signal.SIGTERM)
+    except Exception:                                         # noqa: BLE001
+        pass
+    try:
+        proceso.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            proceso.kill()
+            proceso.wait(timeout=5)
+        except Exception:                                     # noqa: BLE001
+            pass
+
+
+def _capturar(orden, captura, limite_s=None):
+    """Lanza el navegador y espera a que la captura este ENTERA. -> (hecha, error)
+
+    SE ESPERA AL PNG, NO A QUE EL NAVEGADOR SALGA. Lo normal es que escriba la
+    captura y salga solo en milisegundos, y eso no cambia: se le dan
+    GRACIA_SALIDA_S para hacerlo. Pero Chrome (visto en macOS) puede escribirla
+    entera y quedarse vivo, y con `subprocess.run(timeout=180)` cada plano
+    esperaba tres minutos y acababa como fallo con la imagen ya hecha. Ahora,
+    con la captura completa y el navegador sin salir, se cierra.
+    """
+    limite_s = LIMITE_CAPTURA_S if limite_s is None else limite_s
+    extra = {} if os.name == "nt" else {"start_new_session": True}
+    with tempfile.TemporaryFile() as errores:
+        proceso = subprocess.Popen(orden, stdout=subprocess.DEVNULL,
+                                   stderr=errores, **SIN_VENTANA, **extra)
+        hecha = agotado = False
+        try:
+            limite = time.monotonic() + limite_s
+            while True:
+                if _png_entero(captura):
+                    hecha = True
+                    break
+                if proceso.poll() is not None:
+                    hecha = _png_entero(captura)   # justo al salir
+                    break
+                if time.monotonic() >= limite:
+                    agotado = True
+                    break
+                time.sleep(0.1)
+            if hecha and proceso.poll() is None:
+                try:
+                    proceso.wait(timeout=GRACIA_SALIDA_S)
+                except subprocess.TimeoutExpired:
+                    pass
+        finally:
+            _terminar_arbol(proceso)
+        errores.seek(0, os.SEEK_END)
+        errores.seek(max(0, errores.tell() - 300))
+        texto = errores.read().decode("utf-8", "replace")
+    if agotado and not hecha:
+        texto = f"Edge no contesto en {int(limite_s)} s"
+    return hecha, texto
+
+
 def rasterizar(svg, destino, ancho, alto, transparente=True, espera_ms=1800):
     """SVG (ruta o texto) -> PNG con Edge headless.
 
@@ -1714,33 +1808,40 @@ def rasterizar(svg, destino, ancho, alto, transparente=True, espera_ms=1800):
     # Con el MISMO SVG el segundo intento va: si el SVG estuviera mal fallarian
     # los tres igual, asi que insistir no tapa un error de verdad -- solo
     # distingue "esto no se puede pintar" de "esta vez no salio".
+    #
+    # Y CADA INTENTO FOTOGRAFIA A UN SITIO NUEVO, dentro de su perfil, y solo al
+    # final se copia al destino. Se fotografiaba directamente sobre `destino`, y
+    # lo que decia «salio bien» era que existiera: un PNG de una pasada anterior
+    # convertia un fallo en un exito.
     ultimo = ""
+    generado = False
     for intento in range(1, INTENTOS_RASTERIZAR + 1):
         perfil = tempfile.mkdtemp(prefix="edge_ras_")
+        captura = os.path.join(perfil, "captura.png")
         orden = [edge(), "--headless", "--disable-gpu", "--no-first-run",
                  "--disable-extensions", "--hide-scrollbars",
                  f"--user-data-dir={perfil}",
-                 f"--screenshot={destino}",
+                 f"--screenshot={captura}",
                  f"--window-size={int(ancho)},{int(alto)}",
                  f"--virtual-time-budget={int(espera_ms)}"]
         if transparente:
             orden.append("--default-background-color=00000000")
-        orden.append("file:///" + ruta_svg.replace("\\", "/"))
+        # `as_uri` y no «file:///» a mano: codifica espacios y acentos, y en
+        # Linux y Mac no le sobra ni le falta una barra
+        orden.append(Path(ruta_svg).as_uri())
         try:
-            hecho = subprocess.run(orden, capture_output=True, timeout=180,
-                                   **SIN_VENTANA)
-            ultimo = (hecho.stderr or b"").decode("utf-8", "replace")[-300:]
-        except subprocess.TimeoutExpired:
-            ultimo = "Edge no contesto en 180 s"
+            generado, ultimo = _capturar(orden, captura)
+            if generado:
+                shutil.copyfile(captura, destino)
         finally:
             shutil.rmtree(perfil, ignore_errors=True)
-        if os.path.exists(destino):
+        if generado:
             break
         if intento < INTENTOS_RASTERIZAR:
             time.sleep(ESPERA_RASTERIZAR_S)
     if temporal:
         os.unlink(temporal.name)
-    if not os.path.exists(destino):
+    if not generado:
         raise RuntimeError(
             f"Edge no genero {destino} en {INTENTOS_RASTERIZAR} intentos"
             + (f": {ultimo.strip()}" if ultimo.strip() else ""))
