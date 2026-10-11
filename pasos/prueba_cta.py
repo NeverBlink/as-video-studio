@@ -113,14 +113,45 @@ comprobar("dice lo que se ha pedido, con esas palabras",
 #: no hay nada detras de la narracion con lo que pelearse.
 comprobar("la del final es el ultimo bloque",
           "EN EL ULTIMO BLOQUE" in cta.bloque_para_guion(base))
+#: LAS DOS QUE SALIERON DE REPASAR UN VIDEO LARGO (28-09-2026): la
+#: presentacion saltaba a un tema que el video no habia tocado, y lo que se
+#: recomendaba iba sin decir de que trataba. Las dos se arreglaron a mano.
+comprobar("pide tender el puente antes de hablar de un tema nuevo",
+          "EL PUENTE VA PRIMERO" in texto)
+comprobar("y decir en una frase que se lleva quien le haga caso",
+          "QUE SE LLEVA QUIEN LE HAGA CASO" in texto)
+#: SIN FICHA DE PRODUCTO, lo que se lleva sale de la indicacion y de nada mas:
+#: sacarlo de otro sitio seria prometer en el video algo que nadie ha escrito.
+comprobar("que sale SOLO de la indicacion, sin inventar nada",
+          "UNICAMENTE de lo que diga la indicacion" in texto
+          and "no se inventa nada" in texto)
+comprobar("y lo que la indicacion diga expresamente sigue mandando",
+          "expresamente" in texto and "manda sobre esta regla" in texto)
+comprobar("con una sola presentacion el puente tambien se pide: es donde mas falta",
+          "EL PUENTE VA PRIMERO" in cta.bloque_para_guion(
+              cta.normalizar({"presentacion": {"puesto": True}})))
 
-print("\n== el texto es una frase, no un guion ==")
+print("\n== el texto es una indicacion al redactor: tope de 1.500 ==")
+#: Aqui hubo 600 («es una frase, no un guion») y rechazaba las indicaciones con
+#: contexto, que son las que salen organicas. Se sube a 1.500, no se quita.
+igual("el tope son 1.500 caracteres", cta.MAX_TEXTO, 1500)
+indicacion = ("que entre en mi web, donde explico paso a paso como montar esto "
+              "en casa sin gastar de mas. ") * 12
+comprobar("una indicacion con contexto que con 600 se rechazaba",
+          600 < len(indicacion.strip()) <= cta.MAX_TEXTO,
+          f"mide {len(indicacion.strip())}")
+igual("se guarda entera",
+      cta.normalizar({"cta_medio": {"texto": indicacion}})["cta_medio"]["texto"],
+      indicacion.strip())
 try:
     cta.normalizar({"cta_medio": {"texto": "x" * (cta.MAX_TEXTO + 1)}})
     comprobar("un texto pasado de largo se rechaza", False,
               "no ha levantado ValueError")
-except ValueError:
+except ValueError as fallo:
     comprobar("un texto pasado de largo se rechaza", True)
+    comprobar("y el mensaje dice que es una indicacion, no el guion del bloque",
+              "indicacion" in str(fallo) and str(cta.MAX_TEXTO) in str(fallo),
+              str(fallo))
 igual("sin estricto se corta en vez de reventar",
       len(cta.normalizar({"cta_medio": {"texto": "x" * (cta.MAX_TEXTO + 50)}},
                          estricto=False)["cta_medio"]["texto"]), cta.MAX_TEXTO)
@@ -146,6 +177,11 @@ try:
               "no ha levantado ValueError")
 except ValueError:
     comprobar("el paso rechaza un texto pasado de largo", True)
+igual("y deja pasar entera la indicacion larga que antes rechazaba",
+      p3_guion._normalizar({"cta": {"cta_medio": {"puesto": True,
+                                                  "texto": indicacion}}},
+                           estricto=True)["cta"]["cta_medio"]["texto"],
+      indicacion.strip())
 
 print()
 if fallos:

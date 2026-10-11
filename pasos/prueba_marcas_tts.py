@@ -292,6 +292,66 @@ comprobar("ni un <speed ratio=\"0.9\"/>",
 igual("y da ejemplos concretos para poder corregirlo",
       comun.revisar_cifras("May 2024 y el 2%")["ejemplos"], ["2024", "2%"])
 
+print("\n== las siglas que nadie marco se deletrean solas ==")
+# Un video largo (28-09-2026): «GPT» y «PC» sin etiqueta, y la voz los leyo
+# como palabras. Hubo que regrabar a mano.
+igual("GPT y PC, las dos del video, salen con su spell",
+      m.deletrear_siglas("la empresa que creó Chat GPT y los PC nuevos."),
+      ("la empresa que creó Chat <spell>GPT</spell> y los "
+       "<spell>PC</spell> nuevos.", ["GPT", "PC"]))
+igual("sin vocal o de tres letras sin silaba: NPU, TPM, DNI, USB",
+      m.deletrear_siglas("NPU, TPM, DNI y USB")[1], ["NPU", "TPM", "DNI", "USB"])
+igual("lo que se lee como palabra se queda: ONU, IVA, NASA, OTAN, SIM, CIA",
+      m.deletrear_siglas("La ONU, el IVA, la NASA, la OTAN, la SIM y la CIA.")[1], [])
+igual("el enfasis y el arranque de frase no son siglas: NO, Y, YA, HOY, QUE",
+      m.deletrear_siglas("Y claro, NO lo hizo. YA era tarde. HOY no. ¿QUE?")[1], [])
+igual("ni una palabra con tilde o eñe en mayusculas: MÁS, AÑO, ÉL",
+      m.deletrear_siglas("MÁS caro cada AÑO, y ÉL lo sabe.")[1], [])
+igual("IA y UE, dos vocales sin consonante delante, si",
+      m.deletrear_siglas("la IA y la UE")[1], ["IA", "UE"])
+igual("OK se dice «okey» y un rey no se deletrea",
+      m.deletrear_siglas("OK, Felipe II y el siglo XIX.")[1], [])
+igual("tampoco el rey de una sola letra: «Carlos uve» seria un error",
+      m.deletrear_siglas("Carlos V murió en el siglo XVI, no en el X.")[1], [])
+igual("lo que ya lleva spell no se envuelve dos veces",
+      m.deletrear_siglas("La <spell>FBI</spell> y el USB."),
+      ("La <spell>FBI</spell> y el <spell>USB</spell>.", ["USB"]))
+igual("ni se toca lo que va dentro de otra etiqueta",
+      m.deletrear_siglas('Fin.<break time="900ms"/> GPT.')[0],
+      'Fin.<break time="900ms"/> <spell>GPT</spell>.')
+igual("es idempotente",
+      m.deletrear_siglas(m.deletrear_siglas("Chat GPT y la NPU.")[0])[1], [])
+igual("y lo que se lee en pantalla sigue siendo la sigla",
+      m.limpiar(m.deletrear_siglas("Chat GPT, ya.")[0]), "Chat GPT, ya.")
+igual("sin cambiar cuantas palabras tiene el bloque",
+      m.contar_palabras(m.deletrear_siglas("Chat GPT y los PC.")[0]), 5)
+igual("y sanear lo deja pasar tal cual: es una sigla de verdad",
+      m.sanear("Chat <spell>GPT</spell>."), "Chat <spell>GPT</spell>.")
+igual("una cifra no se deletrea: la regla 8 la quiere en letra",
+      m.deletrear_siglas("el 2FA y el MP3")[1], [])
+
+# LOS SEIS IDIOMAS DE ESTA VERSION. Con la clase de letras de la primera
+# version, «NÃO» se partia en «N» + «ÃO» y la «N» suelta salia deletreada; lo
+# mismo «ÊTRE» (quedaba «TRE») o «LÀ» (quedaba «L»).
+igual("una mayuscula con otra letra del idioma no se parte: NÃO, ÊTRE, LÀ, FÜR",
+      m.deletrear_siglas("NÃO, ÊTRE, LÀ, GRÖSSER, FÜR, ÇA")[1], [])
+igual("y el texto sale tal cual",
+      m.deletrear_siglas("Eu disse NÃO à IA.")[0], "Eu disse NÃO à <spell>IA</spell>.")
+igual("un apostrofo es de palabra: DON'T, C'EST, L'ITALIA no dejan letras sueltas",
+      m.deletrear_siglas("DON'T stop. C'EST FINI. L'ITALIA. IT’S OK.")[1], [])
+igual("las palabras de UN idioma con forma de sigla se respetan en ese idioma",
+      [m.deletrear_siglas("THE AND ALL", "en")[1],
+       m.deletrear_siglas("CHE CHI GLI", "it")[1],
+       m.deletrear_siglas("ICH UND IST", "de-DE")[1],
+       m.deletrear_siglas("IL EST OU", "fr")[1],
+       m.deletrear_siglas("EU OU UM", "pt")[1]], [[], [], [], [], []])
+igual("pero solo en el suyo: «ER» es «er» en aleman y una sigla en ingles",
+      [m.deletrear_siglas("ER", "de")[1], m.deletrear_siglas("ER", "en")[1]],
+      [[], ["ER"]])
+igual("y en cualquier idioma la sigla de verdad se sigue deletreando",
+      [m.deletrear_siglas("the GPT and the AI", "en")[1],
+       m.deletrear_siglas("la GPU e la IA", "it")[1]], [["GPT", "AI"], ["GPU", "IA"]])
+
 print("\n== las instrucciones para el modelo ==")
 texto = m.instrucciones()
 comprobar("nombran el break", "break" in texto)

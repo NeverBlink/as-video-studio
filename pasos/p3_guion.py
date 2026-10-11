@@ -598,7 +598,7 @@ def _instruccion(transcript, metadatos, brief, anterior, opciones, correcciones,
 
     # LA ESTRUCTURA, COMO SECCION Y NO COMO REGLA NUMERADA.
     #
-    # Las catorce reglas de abajo son de OFICIO: como se escribe una frase que
+    # Las reglas numeradas de abajo son de OFICIO: como se escribe una frase que
     # se locuta, que se deletrea, que va con letras. Ninguna dice de que va el
     # video, y con un dosier de ciento y pico hechos delante eso es justo lo que
     # falta: el guion salia correcto frase a frase y sin relato -- doce temas
@@ -722,6 +722,13 @@ def _instruccion(transcript, metadatos, brief, anterior, opciones, correcciones,
         # PRONUNCIACION -- se deletrea lo que no se puede pronunciar -- y ademas
         # el motor la impone: `marcas_tts.sanear` quita el <spell> de lo que sea
         # pronunciable, se pida como se pida (`marcas_tts.es_inicialismo`).
+        #
+        # Y desde el 30-09 tambien por el otro lado: la sigla que el redactor
+        # deja SIN marcar y no admite otra lectura (GPT, PC, NPU) la marca
+        # `marcas_tts.deletrear_siglas` en `_aplicar_marcas`. Paso en un video
+        # largo: el «GPT» de «Chat GPT» y un «PC» se leyeron como palabras. La
+        # regla se sigue pidiendo porque el motor solo pone las seguras; las
+        # dudosas (IRPF, PIB) siguen siendo del redactor.
         "9. DELETREAR ES LA EXCEPCION, NO LA NORMA. La pregunta no es si va en "
         "mayusculas: es si un locutor lo PRONUNCIARIA o lo diria letra a letra.\n"
         "   - Se LEE tal cual, sin ninguna etiqueta, todo lo que se puede "
@@ -787,6 +794,27 @@ def _instruccion(transcript, metadatos, brief, anterior, opciones, correcciones,
         "usa en los dos primeros bloques y no vuelve a aparecer. A mitad de "
         "video ese tono no promete nada: repite, y se nota.",
         "14. El titulo es para el video, no para el guion: corto y concreto.",
+        # LAS DOS QUE SALIERON DE REPASAR UN VIDEO LARGO (28-09-2026), y las dos
+        # se pidieron corregir a mano. La primera con esas palabras: «veo el
+        # guion muy pretencioso en la forma de explicar las cosas, buscando ser
+        # demasiado profundo y poetico en sus frases». La segunda en tres
+        # rondas sobre el mismo bloque: «siguiendo el dinero» no gusto, y su
+        # sustituta, «mirando donde esta el negocio», no se entendia. Valen para
+        # cualquier video, y por eso son reglas y no una nota de ese.
+        "15. LLANO, NO SOLEMNE. Se explica como se le explica a alguien listo "
+        "que no sabe del tema: frases directas que dicen una cosa cada una. "
+        "Nada de sentencias que suenan profundas y no anaden un dato («y ahi "
+        "empezo todo», «el precio de la comodidad», «nada volveria a ser "
+        "igual»), ni de frases poeticas o de cierre solemne al final de cada "
+        "bloque. Una metafora solo entra si explica algo que sin ella "
+        "costaria entender, y entonces se cuenta con palabras de todos los "
+        "dias.",
+        "16. NADA DE FRASES HECHAS QUE HAYA QUE DESCIFRAR. «Siguiendo el "
+        "dinero», «mirando donde esta el negocio», «la letra pequena de todo "
+        "esto», «el elefante en la habitacion»: suenan a reportaje y no dicen "
+        "que vamos a hacer. Se dice lo concreto: «vamos a ver como gana "
+        "dinero esta empresa y por que eso cambia su producto». Si una frase "
+        "se puede cambiar por otra mas simple que diga lo mismo, se cambia.",
     ])
 
     if opciones["anotaciones_voz"]:
@@ -1011,7 +1039,35 @@ def _normalizar_bloques(datos):
     return propuestos
 
 
-def _aplicar_marcas(bloques, opciones, avisos=None, idioma="es"):
+def _deletrear_bloque(texto, anterior, idioma):
+    """Las siglas sin marcar de un bloque, deletreadas. -> (texto, envueltas, dejadas)
+
+    MENOS EN UN BLOQUE QUE DICE LO MISMO QUE UNO QUE SE ESCRIBIO ANTES DE ESTO.
+    Al iterar sobre un guion, el redactor devuelve palabra por palabra los
+    bloques que no le tocaba cambiar (lo pide «LO QUE CUESTA CAMBIAR»), y de
+    esos ya cuelgan una toma de voz y unos planos pagados. El analisis de
+    conservacion (`conservar.comparar_bloques`) compara el texto CON sus
+    etiquetas, asi que ponerle ahora un <spell> al «GPT» que un guion de antes
+    llevaba sin marcar convertiria en «retocado» un bloque que nadie ha pedido
+    tocar: a regrabar, y sus planos a juicio. Ahi se deja como se locuto, y se
+    dice (`dejadas`); se deletrea lo que se escribe de nuevo, que se va a grabar
+    igualmente.
+
+    `anterior` es el texto de ese mismo bloque en el guion sobre el que se itera,
+    o None. Si el anterior ya no tenia siglas sin marcar --un guion escrito con
+    esto ya en marcha-- se deletrea igual: es idempotente, y repone el <spell>
+    si el redactor se lo comio al copiar el bloque. «Lo mismo» se mide con las
+    tildes ya repuestas, que es como acaba el texto y como se guardo el anterior.
+    """
+    if anterior is not None and marcas_tts.deletrear_siglas(anterior, idioma)[1]:
+        dicho = marcas_tts.limpiar(comun.reponer_tildes(texto, idioma)[0])
+        if dicho == marcas_tts.limpiar(anterior):
+            return texto, [], marcas_tts.deletrear_siglas(texto, idioma)[1]
+    texto, envueltas = marcas_tts.deletrear_siglas(texto, idioma)
+    return texto, envueltas, []
+
+
+def _aplicar_marcas(bloques, opciones, avisos=None, idioma="es", intactos=None):
     """Deja el texto de cada bloque en un estado seguro para locutarlo.
 
     Es el unico sitio por el que pasa TODO texto de bloque antes de guardarse:
@@ -1032,16 +1088,47 @@ def _aplicar_marcas(bloques, opciones, avisos=None, idioma="es"):
 
     Lo repuesto SE CUENTA en los avisos. Corregir en silencio es la forma de que
     nadie se entere el dia que la lista se equivoque.
+
+    Y LAS SIGLAS QUE NADIE MARCO SE DELETREAN (`marcas_tts.deletrear_siglas`),
+    salvo en los bloques que no cambian respecto a `intactos` -- {id: texto} del
+    guion sobre el que se itera --. El porque, en `_deletrear_bloque`.
     """
     quita = not opciones.get("anotaciones_voz")
-    repuestas = []
+    intactos = intactos or {}
+    repuestas, deletreadas, dejadas = [], [], []
     for bloque in bloques:
         if quita:
             bloque["texto"] = marcas_tts.limpiar(bloque["texto"])
         else:
             bloque["texto"] = marcas_tts.sanear(bloque["texto"], avisos)
+            # LAS SIGLAS QUE NADIE MARCO, SE MARCAN. «GPT» y «PC» se locutaron
+            # como palabras en un video largo (28-09-2026) y hubo que
+            # regrabar. Va DESPUES de sanear, que es quien tira un
+            # <spell> mal cerrado: envolver antes dejaria uno dentro de otro.
+            # Con las anotaciones apagadas no hay forma de decirlo dentro del
+            # texto, y ahi se queda como estaba.
+            bloque["texto"], siglas, sin_tocar = _deletrear_bloque(
+                bloque["texto"],
+                intactos.get(str(bloque.get("id") or "").upper()), idioma)
+            deletreadas.extend(siglas)
+            dejadas.extend(sin_tocar)
         bloque["texto"], cambios = comun.reponer_tildes(bloque["texto"], idioma)
         repuestas.extend(cambios)
+    if deletreadas and avisos is not None:
+        # se cuenta por lo mismo que las tildes: lo que el motor arregla solo
+        # tiene que verse, o el dia que se equivoque nadie sabra que fue el
+        muestra = list(dict.fromkeys(deletreadas))
+        avisos.append(
+            f"se deletrean {len(deletreadas)} sigla(s) que iban sin <spell> y la "
+            f"voz habria leido como palabras: " + ", ".join(muestra[:8])
+            + (f" y {len(muestra) - 8} mas" if len(muestra) > 8 else ""))
+    if dejadas and avisos is not None:
+        muestra = list(dict.fromkeys(dejadas))
+        avisos.append(
+            f"se dejan sin <spell> {len(dejadas)} sigla(s) de bloques que no han "
+            f"cambiado, para no tener que regrabarlos: " + ", ".join(muestra[:8])
+            + (f" y {len(muestra) - 8} mas" if len(muestra) > 8 else "")
+            + ". Si se quieren deletreadas, se marcan con <spell> en el bloque")
     if repuestas and avisos is not None:
         muestra = list(dict.fromkeys(f"'{mal}' -> '{bien}'"
                                      for mal, bien in repuestas))
@@ -1402,6 +1489,12 @@ def _redactar(proyecto, params, avisar):
     origen = None
 
     anterior = None if opciones["regenerar_desde_cero"] else _guion_anterior(proyecto)
+    # los bloques del guion sobre el que se itera, por id: un bloque que vuelve
+    # diciendo lo mismo no se le cambian las siglas (ver `_deletrear_bloque`)
+    intactos = {str(b.get("id") or "").upper(): str(b.get("texto") or "")
+                for b in ((anterior or {}).get("guion")
+                          or (anterior or {}).get("bloques") or [])
+                if isinstance(b, dict) and b.get("id")}
     idioma = _idioma_pedido(brief_doc, opciones)
     palabras_material = int(metadatos.get("palabras_transcript") or
                             sum(comun.contar_palabras(t.get("texto", ""))
@@ -1421,7 +1514,7 @@ def _redactar(proyecto, params, avisar):
     def comprobar_principal(datos):
         propios = []
         bloques = _aplicar_marcas(_normalizar_bloques(datos), opciones,
-                                  propios, idioma)
+                                  propios, idioma, intactos)
         datos["_bloques"] = bloques
         datos["_avisos"] = propios
         palabras = sum(marcas_tts.contar_palabras(b["texto"]) for b in bloques)
@@ -1449,7 +1542,7 @@ def _redactar(proyecto, params, avisar):
     # tambien lo escrito a mano: la interfaz ensena las anotaciones dentro del
     # texto, asi que una persona puede teclear una que no existe sin saberlo, y
     # lo que Cartesia no reconoce lo locuta
-    bloques = _aplicar_marcas(bloques, opciones, avisos_marcas, idioma)
+    bloques = _aplicar_marcas(bloques, opciones, avisos_marcas, idioma, intactos)
 
     palabras = sum(marcas_tts.contar_palabras(b["texto"]) for b in bloques)
     titulo = str(datos.get("titulo") or metadatos.get("titulo") or "Sin titulo").strip()

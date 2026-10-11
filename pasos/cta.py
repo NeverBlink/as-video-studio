@@ -95,9 +95,17 @@ POR_DEFECTO = {
     "cta_final": {"puesto": False, "texto": ""},
 }
 
-#: Un parrafo largo describiendo una llamada a la accion no es una llamada a la
-#: accion: es un guion escrito en la casilla de al lado. El tope corta ahi.
-MAX_TEXTO = 600
+#: EL TOPE ES EL DE UNA INDICACION, NO EL DE UNA FRASE. Aqui hubo 600
+#: caracteres («es una frase, no un guion»), pero lo que se escribe en la
+#: casilla no es la frase que se locuta: es la INDICACION al redactor, y una
+#: buena indicacion lleva contexto --de que va el video, en que momento encaja,
+#: a donde se manda al espectador y que va a encontrar alli--. El tope de 600
+#: rechazaba justo esas, que son las que salen organicas (28-09-2026).
+#:
+#: Se SUBE y no se quita, que es lo que decidio el dueno. Sin tope, un guion
+#: entero pegado en la casilla viajaria en cada llamada al redactor --tokens
+#: que se pagan en cada video-- y le quitaria el sitio al propio video.
+MAX_TEXTO = 1500
 
 
 # ------------------------------------------------------------------- params
@@ -138,7 +146,9 @@ def normalizar(crudo, estricto=True):
         if estricto and len(texto) > MAX_TEXTO:
             raise ValueError(f"lo que se pide en {ETIQUETA[momento]} son "
                              f"{len(texto)} caracteres y el tope son "
-                             f"{MAX_TEXTO}: es una frase, no un guion")
+                             f"{MAX_TEXTO}: es una indicacion para quien "
+                             f"redacta --que pedir, a donde se manda y que se "
+                             f"va a encontrar alli--, no el guion de ese bloque")
         destino["texto"] = texto[:MAX_TEXTO]
     return ficha
 
@@ -207,6 +217,33 @@ def bloque_para_guion(ficha):
         "la campanita» ni superlativos. Si el video acaba de contar algo que da "
         "pie a la peticion, se usa: esa es la unica forma de que no suene "
         "pegada.",
+        # LAS DOS QUE SALIERON DE REPASAR UN VIDEO LARGO (28-09-2026). La
+        # presentacion mandaba a un tema que el video todavia no habia tocado, y
+        # hubo que pedir dos veces que se hilara («sigue sin ser un CTA organico
+        # y bien hilado»): lo que lo arreglo fue anunciar ANTES que lo que se iba
+        # a contar tenia que ver con ese tema. Y el bloque que recomendaba algo
+        # lo nombraba sin decir de que iba; se pidio «profundiza mas en el
+        # contenido» y se acabo escribiendo a mano.
+        #
+        # Aqui no hay ficha de producto --lo que hay es lo que se escribe, ver la
+        # cabecera--, asi que lo que se lleva quien haga caso sale SOLO de la
+        # indicacion de esa llamada. Sacarlo de otro sitio seria prometer en el
+        # video algo que nadie ha dicho que exista.
+        "EL PUENTE VA PRIMERO. Una llamada solo puede hablar de un tema si el "
+        "espectador ya lo ha oido en este video. Si lo que se pide --la web, "
+        "la lista, el curso, otro video-- va de algo que el video todavia no "
+        "ha tocado (pasa sobre todo en la presentacion, que va al principio), "
+        "la frase anterior tiende el puente: dice que lo que se va a contar "
+        "tiene que ver con ese tema, con las palabras del propio video, y "
+        "solo despues llega la peticion. Nunca se salta de un tema a otro sin "
+        "decir por que.",
+        "QUE SE LLEVA QUIEN LE HAGA CASO. Cuando se manda al espectador a algun "
+        "sitio, se dice en una frase concreta que va a encontrar alli, no solo "
+        "el nombre. Eso sale UNICAMENTE de lo que diga la indicacion de esa "
+        "llamada: no se inventa nada que no este escrito en ella --ni "
+        "contenidos, ni precios, ni regalos--, y si no lo dice, se pide sin "
+        "prometer nada. Lo que la indicacion diga expresamente --como decirlo, "
+        "que no contar-- manda sobre esta regla.",
     ])
     if len([m for m, _ in puestos if m in LLAMADAS]) > 1:
         lineas.append(

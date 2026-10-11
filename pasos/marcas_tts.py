@@ -207,6 +207,136 @@ def es_inicialismo(token):
     return True                         # dos letras: IP, AI, PC
 
 
+#: Palabras de dos letras o menos que van en MAYUSCULAS sin ser siglas: el
+#: enfasis de un guion («NO lo hizo»), el arranque de una frase («Y claro») o el
+#: pronombre ingles. Son lengua, no marcas: la lista no envejece con los temas.
+#: Deletrearlas seria desastroso -- «Y» se diria «i griega» --, asi que
+#: `deletrear_siglas` no las toca nunca. Una sigla de verdad con esta forma
+#: («SI» de Sistema Internacional) se puede seguir marcando a mano.
+NO_SON_SIGLAS = frozenset({
+    # castellano
+    "A", "E", "O", "U", "Y", "NO", "SI", "SÍ", "YA", "YO", "TU", "TÚ", "MI",
+    "MÍ", "EL", "ÉL", "LA", "LO", "LE", "UN", "DE", "EN", "ES", "SE", "TE",
+    "ME", "NI", "AL", "OH", "AY", "EH", "HA", "HE", "VA", "VE", "FE", "DA",
+    "DI", "DÍ", "SU", "OS", "IR", "AH",
+    # ingles
+    "I", "SO", "TO", "DO", "GO", "BE", "WE", "MY", "BY", "IN", "ON",
+    "AT", "OF", "OR", "IF", "IS", "IT", "AN", "AS", "UP",
+    # se dice como palabra en los dos idiomas: «okey»
+    "OK",
+    # los numeros romanos de reyes, siglos y secuelas («Felipe II», «siglo
+    # XIX»): se dicen como ordinal o como numero, nunca letra a letra. Y las
+    # dos de UNA letra que mas salen, «Carlos V» y «siglo X»: deletreadas
+    # dirian «Carlos uve».
+    "II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII", "XIII",
+    "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX", "XXI", "V", "X",
+})
+
+#: Y LAS DE CADA IDIOMA, que aqui se escribe en seis. Las de arriba son las de
+#: castellano y las inglesas que se cuelan en cualquier guion; estas son
+#: palabras de UN idioma con forma de sigla -- «CHE» en italiano, «ICH» en
+#: aleman, «THE» en ingles: C-C-V y V-C-C, las mismas formas que NPU y USB -- y
+#: solo valen cuando el guion esta en ese idioma, porque en otro pueden ser una
+#: sigla de verdad («ER» es «er» en aleman y una sala de urgencias en ingles).
+#: Las que son tambien sigla en el mismo idioma se quedan fuera a proposito
+#: (AI, US, AM, APT): ahi se deletrean, que es lo que pide la regla 9.
+NO_SON_SIGLAS_DE = {
+    "en": frozenset({"THE", "AND", "ALL", "SHE", "WHO", "WHY", "TWO", "OFF",
+                     "OLD", "OWN", "END", "ASK", "TRY", "FLY", "SKY", "ITS",
+                     "ILL"}),
+    "pt": frozenset({"OU", "UM", "EU", "EM", "AO"}),
+    "fr": frozenset({"IL", "OU", "ET", "AU", "EU", "EST", "ILS"}),
+    "it": frozenset({"IL", "IO", "ED", "CHE", "CHI", "GLI", "TRE"}),
+    "de": frozenset({"ER", "IM", "AM", "UM", "OB", "AB", "EI", "ICH", "UND",
+                     "IST", "ALS", "INS"}),
+}
+
+#: Una palabra del texto, en cualquier alfabeto y con su apostrofo dentro. La
+#: puntuacion pegada se queda fuera, que es lo que permite envolver «GPT,» como
+#: «<spell>GPT</spell>,».
+#:
+#: No es una clase cerrada de letras (`[A-Za-zÁÉÍÓÚÑ]`), que es como se escribio
+#: primero, pensando en castellano e ingles: con esa clase «NÃO» se partia en
+#: «N» + «ÃO», y una «N» suelta es una consonante sin vocal, o sea una sigla de
+#: manual -- salia «<spell>N</spell>ÃO» --. Lo mismo «ÊTRE» (queda «TRE», C-C-V)
+#: o «LÀ» (queda «L»). Y el apostrofo, por lo mismo: «DON'T» partido deja una
+#: «T» suelta y «C'EST» una «C».
+_PALABRA = re.compile(r"[^\W_]+(?:['’][^\W_]+)*")
+
+#: Lo que ya es etiqueta --un <spell> entero o cualquier otra-- y no se toca.
+_ETIQUETA_O_SPELL = re.compile(r"(<spell>.*?</spell>|<[^<>]*>)", re.I | re.S)
+
+
+def _se_deletrea_sola(token, idioma=""):
+    """Si el MOTOR puede ponerle <spell> a esto sin preguntar a nadie.
+
+    Mas estricto que `es_inicialismo`, y es a proposito: aquello JUZGA lo que el
+    redactor ya marco, y esto MARCA lo que el redactor dejo sin marcar, asi que
+    solo entra lo que no admite otra lectura:
+
+        sin vocal                    GPT, PC, TPM, HTML   -> se deletrea
+        tres, con dos consonantes    NPU, DNI, USB, ADN   -> se deletrea
+        dos, sin consonante delante  IA, UE, IP           -> se deletrea
+
+    Y se queda como esta todo lo que se puede leer: C-V-C y V-C-V (SIM, ONU,
+    IVA), las de dos vocales (HOY, QUE, FUE, y tambien CIA, que en castellano
+    se dice «cia»), las de cuatro o mas con vocal (NASA, OTAN, PSOE) y
+    cualquier palabra con una letra que no sea de la A a la Z --tildes, «ñ»,
+    cedillas, dieresis--: «MÁS», «AÑO», «NÃO», «FÜR» son palabras del idioma, y
+    `es_inicialismo` cuenta la «Á» como consonante, asi que «MÁS» saldria
+    deletreada. Deletrear una palabra que se lee suena peor que leer una sigla.
+    """
+    if token in NO_SON_SIGLAS or token in NO_SON_SIGLAS_DE.get(idioma, ()):
+        return False
+    if not token.isalnum():
+        return False            # «DON'T», «C'EST»: un apostrofo es de palabra
+    if any(c.isdigit() for c in token):
+        return False            # una cifra no se deletrea: la regla 8 la quiere en letra
+    if any(not c.isascii() for c in token):
+        return False            # con tilde, «ñ» o cedilla es una palabra del idioma
+    if not es_inicialismo(token):
+        return False
+    letras = [c for c in token if c.isalpha()]
+    if not _grupos_de_vocal(letras):
+        return True
+    forma = "".join("V" if c in _VOCALES else "C" for c in token.upper())
+    return forma in ("CCV", "VCC", "VV", "VC")
+
+
+def deletrear_siglas(texto, idioma=""):
+    """Pone <spell> a las siglas que se dicen letra a letra y nadie marco.
+
+    -> (texto, [siglas envueltas])
+
+    EL FALLO QUE CIERRA (un video largo, 28-09-2026). El guion decia «Chat GPT»
+    y «PC» sin etiqueta, y la voz leyo «GPT» y «PC» como palabras. Hubo que
+    regrabar escribiendolo a mano como «Chat Ge Pe Te» y «Pe Ce», que
+    ademas ensucia el subtitulo. La regla 9 del guion ya pedia el <spell>; el
+    redactor no lo puso. Y como el motor ya sabe distinguir una sigla de una
+    palabra (`es_inicialismo`), no hace falta volver a pedirselo: se pone aqui,
+    igual que `sanear` quita el <spell> de lo que se pronuncia.
+
+    Solo toca texto suelto: lo que ya va dentro de una etiqueta se queda como
+    esta, y el subtitulo sigue diciendo «GPT» porque `limpiar` quita el <spell>.
+    `idioma` es el del guion, y solo decide que palabras de ese idioma no se
+    tocan (NO_SON_SIGLAS_DE).
+    """
+    codigo = re.split(r"[-_]", str(idioma or "").strip().lower())[0]
+    envueltas = []
+
+    def envolver(casa):
+        token = casa.group(0)
+        if not _se_deletrea_sola(token, codigo):
+            return token
+        envueltas.append(token)
+        return f"<spell>{token}</spell>"
+
+    piezas = _ETIQUETA_O_SPELL.split(str(texto or ""))
+    for indice in range(0, len(piezas), 2):
+        piezas[indice] = _PALABRA.sub(envolver, piezas[indice])
+    return "".join(piezas), envueltas
+
+
 def _deletreable(pieza):
     """El contenido de un <spell> partido en tokens, con el veredicto de cada uno.
 

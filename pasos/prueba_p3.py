@@ -318,6 +318,35 @@ def prueba_copias():
     igual(p3_guion._problemas(repuestos, 120, brief, opciones, "es"), [],
           "una falta que ya se ha repuesto no obliga a rehacer el guion")
 
+    # LAS SIGLAS SIN MARCAR, EN EL MISMO EMBUDO (un video largo, 28-09-2026):
+    # «Chat GPT» se locuto como una palabra y hubo que regrabar a mano.
+    avisos_siglas = []
+    con_siglas = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "la empresa que creó Chat GPT"}],
+        p3_guion._normalizar({}), avisos_siglas, "es")
+    igual(con_siglas[0]["texto"], "la empresa que creó Chat <spell>GPT</spell>",
+          "el embudo de bloques deletrea la sigla que el redactor dejo sin marcar")
+    comprobar(any("se deletrean 1 sigla" in a and "GPT" in a for a in avisos_siglas),
+              "y lo dice en los avisos")
+    sin_marcas = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "la empresa que creó Chat GPT"}],
+        p3_guion._normalizar({"anotaciones_voz": False}), [], "es")
+    igual(sin_marcas[0]["texto"], "la empresa que creó Chat GPT",
+          "con las anotaciones apagadas no se mete ninguna etiqueta")
+    # el idioma del guion llega hasta el embudo: «CHE» es una palabra italiana
+    en_italiano = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "CHE cosa fa la GPU?"}],
+        p3_guion._normalizar({}), [], "it")
+    igual(en_italiano[0]["texto"], "CHE cosa fa la <spell>GPU</spell>?",
+          "y con el idioma del guion: en italiano «CHE» se lee y la GPU se deletrea")
+    # sanear va ANTES: un <spell> mal cerrado se tira, y envolver despues no
+    # deja una etiqueta dentro de otra
+    mal_cerrado = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "el <spell>GPT de siempre"}],
+        p3_guion._normalizar({}), [], "es")
+    igual(mal_cerrado[0]["texto"], "el <spell>GPT</spell> de siempre",
+          "un <spell> sin cerrar no acaba con un spell dentro de otro")
+
     # Lo que SI obliga a rehacerlo es un guion escrito entero sin tildes: ahi no
     # hay lista de palabras que valga.
     seco = [{"id": "B001", "texto": " ".join(
@@ -351,6 +380,16 @@ def prueba_instruccion():
               "la instruccion prohibe copiar y parafrasear frase a frase")
     comprobar("no persigas un numero exacto" in texto,
               "la instruccion pide una horquilla, no una cifra exacta")
+    # Repasando un video largo (28-09-2026): «muy pretencioso... demasiado
+    # profundo y poetico», y «siguiendo el dinero» / «mirando donde esta el
+    # negocio», que no se entendia.
+    comprobar("LLANO, NO SOLEMNE" in texto,
+              "la instruccion pide registro llano y no frases de sentencia")
+    comprobar("NADA DE FRASES HECHAS" in texto and "Siguiendo el dinero" in texto,
+              "y prohibe las frases hechas que hay que descifrar, con el caso real")
+    comprobar(texto.index("14. El titulo") < texto.index("15. LLANO")
+              < texto.index("16. NADA DE FRASES HECHAS") < texto.index("== FORMATO"),
+              "y van detras de la 14, numeradas, dentro de las reglas")
 
     # LAS DOS REGLAS DE LONGITUD TIENEN QUE MULTIPLICAR AL PRESUPUESTO.
     #
@@ -578,6 +617,99 @@ def prueba_reintento():
         shutil.rmtree(base, ignore_errors=True)
 
 
+def prueba_siglas_al_iterar():
+    """Al iterar sobre un guion de ANTES, sus bloques intactos no se deletrean.
+
+    El analisis de conservacion compara el texto de cada bloque CON etiquetas:
+    ponerle ahora un <spell> al «GPT» de un bloque que el redactor devolvio tal
+    cual lo convertiria en «retocado», y eso es regrabarlo y llevar sus planos a
+    juicio sin que nadie haya pedido tocarlo. Lo que se escribe de nuevo, si.
+    """
+    print("\n[7b] siglas al iterar sobre un guion escrito antes")
+    opciones = p3_guion._normalizar({})
+    # como sale un guion de verdad: el gancho ya trae su pausa puesta
+    viejo = {"B001": "Todo empezó con Chat GPT y nadie lo vio venir."
+                     "<break time=\"900ms\"/>",
+             "B002": "Llegó la NPU."}
+
+    avisos = []
+    intacto = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": viejo["B001"]}], opciones, avisos, "es", viejo)
+    igual(intacto[0]["texto"], viejo["B001"],
+          "un bloque que vuelve diciendo lo mismo se queda como se locuto")
+    comprobar(any("se dejan sin <spell> 1 sigla" in a and "GPT" in a for a in avisos),
+              "y se dice que sigla se ha dejado sin marcar, y por que")
+    tocado = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "Todo empezó con Chat GPT, y casi nadie lo vio venir."}],
+        opciones, [], "es", viejo)
+    comprobar("<spell>GPT</spell>" in tocado[0]["texto"],
+              "un bloque reescrito si se deletrea: se va a grabar de nuevo igualmente")
+    sin_tilde = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "Tambien lo decia Chat GPT."}], opciones, [], "es",
+        {"B001": "También lo decía Chat GPT."})
+    igual(sin_tilde[0]["texto"], "También lo decía Chat GPT.",
+          "una tilde que el motor repone no cuenta como bloque cambiado")
+    sin_etiqueta = p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": "Chat GPT, otra vez."}], opciones, [], "es",
+        {"B001": "Chat <spell>GPT</spell>, otra vez."})
+    igual(sin_etiqueta[0]["texto"], "Chat <spell>GPT</spell>, otra vez.",
+          "en un guion de despues, el <spell> que el redactor se comio se repone")
+    igual(p3_guion._aplicar_marcas(
+        [{"id": "B001", "texto": viejo["B001"]}], opciones, [], "es")[0]["texto"],
+          "Todo empezó con Chat <spell>GPT</spell> y nadie lo vio venir."
+          "<break time=\"900ms\"/>",
+          "sin guion anterior (desde cero) se deletrea todo")
+
+    # Y DE PUNTA A PUNTA, con el CLI sustituido por un doble: el guion de antes
+    # es la version activa y el redactor devuelve B001 igual y B002 cambiado.
+    base = tempfile.mkdtemp(prefix="prueba_p3_siglas_")
+    try:
+        proyecto, estado = preparar_proyecto(base, "Guion Con Siglas")
+        trabajo = comun.preparar_trabajo(proyecto, "guion")
+        comun.escribir_json(os.path.join(trabajo, "guion.json"), {
+            "titulo": "El de antes",
+            "guion": [{"id": "B001", "texto": viejo["B001"], "abre_seccion": True},
+                      {"id": "B002", "texto": viejo["B002"], "abre_seccion": False}]})
+        estado.completar("guion", {"guion_fichero": "guion.json",
+                                   "resumen": "guion escrito antes de deletrear"})
+        respuesta = {"titulo": "El de ahora",
+                     "bloques": [{"id": "B001", "texto": viejo["B001"]},
+                                 {"id": "B002", "texto": "Y después llegó el PC con su "
+                                                         "NPU, que lo cambió todo."}]}
+        respuestas = [ProcesoFalso(0, sobre_cli(json.dumps(respuesta)))]
+        original = p3_guion.subprocess.Popen
+        p3_guion.subprocess.Popen = lambda *a, **k: respuestas.pop(0)
+        try:
+            salidas = p3_guion.ejecutar(
+                proyecto, {"prompt_general": "cambia solo el B002", "reintentos": 0},
+                lambda v, m="": v)
+        finally:
+            p3_guion.subprocess.Popen = original
+        nuevo = leer_json(os.path.join(proyecto.ruta_trabajo("guion", crear=False),
+                                       salidas["guion_fichero"]))["guion"]
+        igual(nuevo[0]["texto"], viejo["B001"],
+              "el bloque que no se toco sale igual que se locuto: se conserva")
+        igual(nuevo[1]["texto"],
+              "Y después llegó el <spell>PC</spell> con su <spell>NPU</spell>, "
+              "que lo cambió todo.",
+              "y el que se reescribio sale con sus siglas deletreadas")
+        comprobar(any("se dejan sin <spell>" in a for a in salidas["avisos"])
+                  and any("se deletrean 2 sigla" in a for a in salidas["avisos"]),
+                  "con las dos cosas dichas en los avisos")
+        # EL PORQUE, MEDIDO CON EL MISMO ANALISIS QUE DECIDE QUE SE PAGA
+        import conservar                                       # noqa: PLC0415
+        locutado = [{"id": bid, "texto": texto} for bid, texto in viejo.items()]
+        igual(conservar.comparar_bloques(locutado, nuevo)["B001"]["estado"], "igual",
+              "y la conservacion lo da por igual: ni se regraba ni se juzgan sus planos")
+        con_spell = marcas_tts.deletrear_siglas(viejo["B001"])[0]
+        comprobar(conservar.comparar_bloques(
+            locutado, [{"id": "B001", "texto": con_spell}])["B001"]["estado"]
+                  not in ("igual", "cosmetico"),
+                  "que es lo que dejaria de ser si se le pusiera el <spell>")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 # ------------------------------------------------------------------ CLI real
 
 def preparar_proyecto(base, nombre, duracion=60):
@@ -714,6 +846,7 @@ def principal():
         prueba_instruccion()
         prueba_fallos_cli()
         prueba_reintento()
+        prueba_siglas_al_iterar()
         # La redaccion REAL es opt-in, con el mismo flag que prueba_pasos_voz:
         # llama al CLI de verdad (red, medio minuto y varianza del modelo -- una
         # tirada salio de horquilla con 196 palabras sobre 179). La suite por
