@@ -178,15 +178,15 @@ a { color: var(--acento); }
 
 /* Y `.coste-light` con el, no debajo: es la MISMA cifra del mismo video
    mirada desde la otra pantalla (ver `costeLight` en app.js). Dos bloques de
-   estilo separados es la forma de que uno se quede viejo. Lo unico que cambia
-   es que este no se abre, asi que no lleva cursor de mano. */
+   estilo separados es la forma de que uno se quede viejo. Los dos abren el
+   desglose por paso, asi que los dos llevan cursor de mano. */
 #coste, .coste-light {
   display: flex; align-items: center; gap: 12px; padding: 3px 10px;
   background: var(--hueco); border: 1px solid var(--linea); border-radius: 8px;
   font-size: 12px; line-height: 1.2; white-space: nowrap; cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
-.coste-light { cursor: default; flex: 0 0 auto; }
+.coste-light { flex: 0 0 auto; }
 #coste.abierto { border-color: var(--acento); }
 #coste.aviso, .coste-light.aviso { border-color: var(--aviso); }
 #coste .prov, .coste-light .prov { display: flex; align-items: baseline; gap: 5px; }
@@ -1903,6 +1903,11 @@ button.primario.grande { padding: 9px 18px; font-size: 14px; }
 .light-cab .volver {
   flex: 0 0 auto; align-self: center; padding: 4px 10px; font-size: 13px;
 }
+
+/* LA PAPELERA, al final de la cabecera de «Tus vídeos». Centrada por lo mismo
+   que «volver» (un boton alineado por `baseline` cuelga) y empujada a la
+   derecha: es una salida de la lista, no una cosa mas de ella. */
+.light-cab .ir-papelera { flex: 0 0 auto; align-self: center; margin-left: auto; }
 
 /* EN ESTRECHO EL PIE SE PARTE EN DOS LÍNEAS. Con los dos botones y la barra en
    fila, a 375 px la barra se queda en 57 px y la línea que dice lo que va a

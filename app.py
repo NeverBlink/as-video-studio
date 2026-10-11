@@ -204,6 +204,73 @@ def _registrar_trabajo(trabajo_id, pid):
         _INDICE_TRABAJOS[trabajo_id] = pid
 
 
+# ------------------------------------------------------- un montaje a la vez
+#
+# LO UNICO QUE NO SE HACE EN PARALELO ENTRE VIDEOS ES MONTARLOS. Montar son los
+# subtitulos con su movimiento y el MP4: decenas de procesos de Edge dibujando y
+# ffmpeg cosiendo. Medido en una maquina de escritorio, un solo lote de render
+# llego a 2,4 GB de memoria, y un video largo montandose con dieciseis lotes la
+# dejo sin memoria a mitad de noche (`MemoryError` en diez de ellos). Dos
+# montajes a la vez se pisan la CPU y la memoria y tardan mas que uno detras de
+# otro.
+#
+# Todo lo demas --el guion, la voz, las imagenes (que son llamadas a una API),
+# reproducir, repasar-- va a la vez sin estorbarse, y bloquearlo era lo que
+# dejaba un segundo video inservible mientras se montaba el primero: ni se
+# podia escuchar su voz.
+#
+# Dentro de un mismo video ya habia una regla (una tanda a la vez); esto es la
+# de entre videos, y solo para el montaje.
+TAREAS_DE_MONTAJE = ("callouts", "render")
+#: trabajo -> proyecto, de los montajes lanzados en este proceso
+_MONTAJES = {}
+#: mirar-y-lanzar dentro del cerrojo: dos clics en dos videos a la vez no
+#: pueden pasar los dos la comprobacion
+_CERROJO_MONTAJE = threading.RLock()
+
+
+def _montaje_en_marcha(excepto=None):
+    """El montaje que esta corriendo en OTRO video, o None. -> dict"""
+    with _LOCK:
+        pares = list(_MONTAJES.items())
+    for tid, pid in pares:
+        try:
+            ficha = contexto(pid).gestor.estado(tid)
+        except (KeyError, ErrorApi):
+            ficha = None
+        if not ficha or ficha.get("estado") not in ("pendiente", "ejecutando"):
+            with _LOCK:
+                _MONTAJES.pop(tid, None)
+            continue
+        if pid == excepto:
+            continue
+        try:
+            nombre = contexto(pid).proyecto.config.get("nombre") or pid
+        except Exception:                                       # noqa: BLE001
+            nombre = pid
+        return {"proyecto": pid, "nombre": nombre, "trabajo_id": tid,
+                "progreso": ficha.get("progreso") or 0.0}
+    return None
+
+
+def _exigir_sin_otro_montaje(ctx):
+    """409 si otro video se esta montando. Se llama DENTRO de `_CERROJO_MONTAJE`."""
+    otro = _montaje_en_marcha(excepto=ctx.id)
+    if otro is None:
+        return
+    raise ErrorApi(
+        409, f"ya se está montando «{otro['nombre']}» "
+             f"({round(100 * float(otro['progreso']))} %): montar dos vídeos a "
+             f"la vez los hace ir más lentos a los dos. Cuando acabe, vuelve a "
+             f"pulsar. Lo demás (imágenes, voz, guion) sí se puede lanzar ya.",
+        {"montaje_en_marcha": otro})
+
+
+def _anotar_montaje(trabajo_id, pid):
+    with _LOCK:
+        _MONTAJES[trabajo_id] = pid
+
+
 def contexto_de_trabajo(trabajo_id):
     """Contexto del proyecto dueno de un trabajo. 404 si no se conoce."""
     with _LOCK:
@@ -540,9 +607,16 @@ def lanzar_paso(ctx, paso_id, unidades, nombre=None, evento="paso_lanzado",
         raise ErrorApi(409, f"'{paso_id}' ya se esta ejecutando",
                        {"trabajo_id": activo["id"], "progreso": activo["progreso"]})
 
-    trabajo_id = ctx.gestor.lanzar(nombre or paso_id, _correr_paso, ctx, paso_id,
-                                   unidades, opciones or {}, paso=paso_id,
-                                   unidades=unidades)
+    # montar (subtitulos con movimiento, MP4) es lo unico exclusivo entre videos
+    monta = paso_id in TAREAS_DE_MONTAJE
+    with (_CERROJO_MONTAJE if monta else contextlib.nullcontext()):
+        if monta:
+            _exigir_sin_otro_montaje(ctx)
+        trabajo_id = ctx.gestor.lanzar(nombre or paso_id, _correr_paso, ctx,
+                                       paso_id, unidades, opciones or {},
+                                       paso=paso_id, unidades=unidades)
+        if monta:
+            _anotar_montaje(trabajo_id, ctx.id)
     _registrar_trabajo(trabajo_id, ctx.id)
     ficha = {"trabajo": trabajo_id, "unidades": unidades or "todas"}
     ficha.update(datos or {})
@@ -1337,6 +1411,7 @@ def fijar_params(pid: str, paso: str, cuerpo: dict = Body(default=None)):
     paso_id = _validar_paso(paso)
     datos = _cuerpo(cuerpo)
     reemplazar = bool(datos.get("reemplazar"))
+    fusionar = bool(datos.get("fusionar_unidades"))
     if "params" in datos:
         # si el que llama nombra 'params' expresamente, tiene que ser un objeto:
         # tragarselo como un parametro mas llamado "params" seria peor que fallar
@@ -1345,7 +1420,27 @@ def fijar_params(pid: str, paso: str, cuerpo: dict = Body(default=None)):
                                 f"llego {type(datos['params']).__name__}")
         nuevos = datos["params"]
     else:
-        nuevos = {k: v for k, v in datos.items() if k != "reemplazar"}
+        nuevos = {k: v for k, v in datos.items()
+                  if k not in ("reemplazar", "fusionar_unidades")}
+
+    # FUSIONAR UNIDADES, a peticion de quien llama. `actualizar_params`
+    # sustituye el diccionario de cada unidad ENTERO, y la cola de «regenerar
+    # con nota» de la pantalla de Imagenes manda solo `{feedback: texto}`: en un
+    # video largo, eso borro la direccion de los veintiun planos retocados en su
+    # repaso, y cada uno se redibujo con la accion del tramo en vez de con su
+    # idea. Lo mismo se habria llevado una cartela o una carta forzada. Y en
+    # esta version la direccion viene encendida en todos los videos de la
+    # pantalla, asi que cualquier nota la tocaba.
+    #
+    # Es opcional para no cambiar lo que ya hace quien SI manda la unidad entera
+    # (y quitar una clave de una unidad sigue siendo mandarla entera sin ella).
+    if fusionar and not reemplazar and isinstance(nuevos.get("unidades"), dict):
+        previas = (ctx.estado.params(paso_id) or {}).get("unidades") or {}
+        nuevos = dict(nuevos)
+        nuevos["unidades"] = {
+            uid: {**(previas.get(uid) if isinstance(previas.get(uid), dict) else {}),
+                  **(valor if isinstance(valor, dict) else {})}
+            for uid, valor in nuevos["unidades"].items()}
 
     _validar_params(paso_id, nuevos)
 
@@ -1873,6 +1968,10 @@ def _correr_regrabar(avisar, ctx, seccion_id, peticion, ajuste):
 
     cambiados = [b["id"] for b, viejo in zip(nuevos, bloques)
                  if b["texto"] != viejo["texto"]]
+    # ¿HA TOCADO ALGUIEN LA VOZ O EL GUION MIENTRAS SE REGRABABA? Se mira ANTES
+    # de escribir el guion: `estado_de` solo dice «ejecutando» mientras la marca
+    # con la que arranco este trabajo sigue cuadrando con lo que hay ahora.
+    intacta = ctx.estado.estado_de("voz") == "ejecutando"
     if cambiados:
         # al guion, que es de donde bebe todo lo de despues. Con la MISMA forma
         # que escribe y lee la pantalla ({"texto": ...}): se guardaba la cadena
@@ -1886,8 +1985,94 @@ def _correr_regrabar(avisar, ctx, seccion_id, peticion, ajuste):
     ctx.bitacora.anotar("seccion_regrabada", "voz", {
         "seccion": seccion_id, "peticion": peticion[:200],
         "bloques_cambiados": cambiados})
+    # LO QUE SE HA LOCUTADO, junto a la toma, como lo deja `p4_voz.ejecutar`: es
+    # el «antes» contra el que `conservar` mide que ha cambiado del guion.
+    PASOS_MODULOS.comun.escribir_json(
+        os.path.join(destino, "guion_locutado.json"),
+        {"bloques": [{"id": b["id"], "texto": b["texto"]} for b in nuevos]})
+
+    # Y SE SELLA COMO VERSION NUEVA DE LA VOZ. No se hacia: la toma cosida se
+    # quedaba en pasos/voz/trabajo/ y la version activa seguia siendo la de
+    # antes, asi que la pantalla ensenaba el texto y el audio viejos y regrabar
+    # parecia no haber hecho nada -- y la siguiente toma de la voz pisaba la
+    # carpeta de trabajo, o sea que el tramo pagado se perdia.
+    #
+    # LA FOTO DE LA VOZ SE VUELVE A HACER si este trabajo ha reescrito el guion.
+    # `completar` sella con las entradas con las que ARRANCO el trabajo, y la
+    # frase nueva entra en la firma de la voz: sellada con la foto de antes, la
+    # voz recien regrabada saldria «no al dia» y la tanda de la voz ofreceria
+    # regrabar la toma ENTERA, que se paga. Solo si nadie ha tocado nada
+    # mientras tanto (`intacta`): si alguien edito otro bloque a la vez, esta
+    # toma no lo dice, y la voz tiene que seguir saliendo como no al dia.
+    if cambiados and intacta:
+        ctx.estado.marcar_ejecutando("voz")
+    ligeras, _ = _aligerar(salidas)
+    version = ctx.estado.completar("voz", ligeras, None)
+    avisar(0.97, "poniendo al día la revisión del audio")
+    # Que no se pueda poner al dia la revision NO tumba el trabajo: la voz ya
+    # esta sellada, y un fallo aqui la marcaria como fallida (el gestor marca el
+    # paso del trabajo, que es la voz).
+    try:
+        revision, por_que_no = _revision_al_dia_sin_regrabar(avisar, ctx)
+    except Exception as fallo:                                  # noqa: BLE001
+        revision, por_que_no = None, f"no se ha podido poner al día: {fallo}"
+    if por_que_no:
+        ctx.bitacora.anotar("aviso", "revision_audio",
+                            {"tras_regrabar": por_que_no})
     salidas["bloques_cambiados"] = cambiados
+    salidas["version"] = version
+    salidas["revision_audio"] = {"version": revision, "por_que_no": por_que_no}
     return salidas
+
+
+def _revision_al_dia_sin_regrabar(avisar, ctx):
+    """La revision del audio, al dia con la toma recien sellada, SIN regrabarla.
+    -> (version, por_que_no)
+
+    LA REVISION ES LA TOMA QUE SUENA: `_audio_de_la_toma` la prefiere a la de la
+    voz, asi que despues de regrabar un tramo tiene que pasar a ser la nueva, o
+    las diapositivas y el montaje seguirian diciendo la frase vieja.
+
+    PERO SIN CORRER SU PASO A CIEGAS. Sin notas, `p5_revision_audio` sella la
+    toma de la voz tal cual (`_sellar_sin_cambios`) y no cuesta nada; pero si
+    algo no cuadra --hay notas sin aplicar, la voz o sus mandos no son los de la
+    toma, el texto no es el que se locuto-- REGRABA LA TOMA ENTERA en Cartesia,
+    que se paga, y nadie lo ha pedido al regrabar un tramo. Asi que aqui se le
+    pregunta a esa misma funcion: si no se puede sellar sin cambios no se corre
+    nada, se dice por que, y la revision se queda como estaba hasta que alguien
+    pida la tanda de la voz.
+    """
+    p4 = PASOS_MODULOS.p4_voz
+    p5 = PASOS_MODULOS.p5_revision_audio
+    comun = PASOS_MODULOS.comun
+    params = ctx.estado.params("revision_audio") or {}
+    notas = p5.agrupar_comentarios(params.get("comentarios"))
+    if notas:
+        return None, (f"la revisión del audio tiene notas sin aplicar en "
+                      f"{len(notas)} bloque(s), y aplicarlas regraba la toma "
+                      f"entera: se queda como estaba hasta que la pidas")
+    # Lo mismo que lee el paso, y en el mismo orden (`p5_revision_audio.ejecutar`)
+    bloques = p4.cargar_guion(ctx.proyecto, params)
+    cfg = p4.resolver_params(p5._config_voz(ctx.proyecto, params))
+    destino = comun.preparar_trabajo(ctx.proyecto, "revision_audio")
+    sellada = p5._sellar_sin_cambios(ctx.proyecto, bloques, cfg, destino,
+                                     lambda _valor=None, mensaje="":
+                                     avisar(0.98, mensaje))
+    if sellada is None:
+        shutil.rmtree(destino, ignore_errors=True)
+        return None, ("la toma no es la que pediría la revisión del audio (otra "
+                      "voz, otros mandos u otro texto), y ponerla al día sería "
+                      "regrabarla entera: se queda como estaba hasta que la pidas")
+    comun.escribir_json(os.path.join(destino, p5.NOMBRE_GUION),
+                        {"guion": [dict(b) for b in bloques]})
+    comun.escribir_json(os.path.join(destino, p5.NOMBRE_COMENTARIOS),
+                        {"comentarios": [], "cambios": [], "avisos": []})
+    ligeras, _ = _aligerar(sellada)
+    version = ctx.estado.completar("revision_audio", ligeras, None)
+    ctx.bitacora.anotar("paso_completado", "revision_audio", {
+        "version": version, "resumen": str(sellada.get("resumen") or ""),
+        "tras_regrabar": True})
+    return version, ""
 
 
 def medios_json(ruta):
@@ -1983,6 +2168,17 @@ def regrabar_seccion(pid: str, seccion_id: str, cuerpo: dict = Body(default=None
     ctx = contexto(pid)
     if PASOS_MODULOS is None:
         raise ErrorApi(503, f"los pasos no se han podido cargar: {ERROR_PASOS}")
+    # NI CON LA VOZ NI CON SU REVISION CORRIENDO: este trabajo sella una version
+    # nueva de las dos (`_correr_regrabar`), y dos trabajos escribiendo a la vez
+    # en sus carpetas de trabajo dejan una toma a medias de cada uno -- con el
+    # tramo regrabado, que ya se ha pagado, dentro de la que se pierde.
+    for ocupado in ("voz", "revision_audio"):
+        activo = _trabajo_activo(ctx, ocupado)
+        if activo is not None:
+            raise ErrorApi(409, "la voz de este vídeo se está generando: espera "
+                                "a que acabe para regrabar un tramo",
+                           {"trabajo_id": activo["id"],
+                            "progreso": activo["progreso"]})
     datos = _cuerpo(cuerpo)
     por_fase = CLI_CLAUDE.por_defecto_de("revision_audio")
     ajuste = _ajuste_cli(datos, por_fase["modelo"], por_fase["esfuerzo"])
@@ -5109,8 +5305,15 @@ def aplicar_repaso(pid: str, cuerpo: dict = Body(default=None)):
     # diapositivas, donde lo que se quiere es MIRAR lo arreglado; la del video
     # no lo manda, porque alli aplicar y montar son el mismo gesto.
     sin_montar = bool(datos.get("sin_montar"))
-    trabajo_id = ctx.gestor.lanzar("repaso", _correr_repaso, ctx, ajuste, modo,
-                                   sin_montar, paso="render")
+    # aplicar el repaso termina montando el MP4, salvo que se pida sin montar:
+    # entonces es lo unico exclusivo entre videos (ver TAREAS_DE_MONTAJE)
+    with (_CERROJO_MONTAJE if not sin_montar else contextlib.nullcontext()):
+        if not sin_montar:
+            _exigir_sin_otro_montaje(ctx)
+        trabajo_id = ctx.gestor.lanzar("repaso", _correr_repaso, ctx, ajuste,
+                                       modo, sin_montar, paso="render")
+        if not sin_montar:
+            _anotar_montaje(trabajo_id, ctx.id)
     _registrar_trabajo(trabajo_id, ctx.id)
     return {"trabajo_id": trabajo_id, "ajuste": ajuste,
             "trabajo": ctx.gestor.estado(trabajo_id),
@@ -6069,9 +6272,17 @@ def generar_pestana(pid: str, pestana: str, cuerpo: dict = Body(default=None)):
             continue
         _que_hace(tarea["id"], ctx, receta, modo)
 
-    trabajo_id = ctx.gestor.lanzar(f"receta:{pestana}", _correr_receta, ctx,
-                                   pestana, receta, puestas, modo,
-                                   paso=orden[0]["paso"])
+    # una receta que lleva los subtitulos o el MP4 monta: espera a que no se
+    # monte otro video (ver TAREAS_DE_MONTAJE)
+    monta = any(t["id"] in TAREAS_DE_MONTAJE for t in orden)
+    with (_CERROJO_MONTAJE if monta else contextlib.nullcontext()):
+        if monta:
+            _exigir_sin_otro_montaje(ctx)
+        trabajo_id = ctx.gestor.lanzar(f"receta:{pestana}", _correr_receta, ctx,
+                                       pestana, receta, puestas, modo,
+                                       paso=orden[0]["paso"])
+        if monta:
+            _anotar_montaje(trabajo_id, ctx.id)
     _registrar_trabajo(trabajo_id, ctx.id)
     ctx.bitacora.anotar("receta_lanzada", orden[0]["paso"],
                         {"pestana": pestana, "modo": modo,
@@ -8711,6 +8922,80 @@ def _planos_previstos(ctx):
             "origen": "estimado por la duración y el ritmo"}
 
 
+#: {pid: (clave, {uid: params.unidades[uid]})}. Ver `_datos_de_sellado`.
+_SELLADOS = {}
+
+
+def _datos_de_sellado(ctx):
+    """Con que DATO PROPIO se sello cada plano. -> {uid: params.unidades[uid]}
+
+    El de la version que lo SELLO, que no es siempre la activa. Una tanda que
+    solo rehace unos planos sella una version cuyos params ya llevan la nota de
+    otro plano que fallo antes de dibujarse: comparado con la activa, ese plano
+    pareceria pagado sin estarlo. La version de cada plano sale de la fecha de su
+    registro, que `completar` escribe en la misma pasada que la de su version
+    (la primera version que no es anterior a ella es la que lo sello).
+
+    MEMORIZADO por el historico: leerlo copia los params de todas las versiones,
+    y esto lo pregunta la pantalla cada pocos segundos para pintar el precio de
+    un boton. Una version no cambia despues de escrita, asi que mientras no
+    aparezca otra --o se revierta a otra-- lo leido vale.
+    """
+    resumen = ctx.estado.versiones_resumen("assets")
+    activa = next((v for v in resumen if v.get("activa")), None)
+    if activa is None:
+        return {}
+    clave = (activa.get("n"),) + tuple((v.get("n"), v.get("fecha")) for v in resumen)
+    guardado = _SELLADOS.get(ctx.id)
+    if guardado and guardado[0] == clave:
+        return guardado[1]
+    historico = [(str(v.get("fecha") or ""),
+                  (v.get("params") or {}).get("unidades") or {},
+                  v.get("n") == activa.get("n"))
+                 for v in ctx.estado.versiones("assets")]
+    de_la_activa = next((u for _f, u, es in historico if es), {})
+    sellados = {}
+    for uid, registro in (ctx.estado.manifiesto_version(
+            "assets", activa.get("n")) or {}).items():
+        if not str(uid).startswith("escena:"):
+            continue
+        fecha = str(registro.get("fecha") or "") if isinstance(registro, dict) else ""
+        suyas = de_la_activa
+        if fecha:
+            suyas = next((u for f, u, _es in historico if f >= fecha), de_la_activa)
+        sellados[uid] = suyas.get(uid)
+    _SELLADOS[ctx.id] = (clave, sellados)
+    return sellados
+
+
+def _planos_que_se_pagan(ctx):
+    """Los planos con imagen SELLADA que la proxima tanda vuelve a pagar. -> set
+
+    NO BASTA CON QUE ESTEN OBSOLETOS. La firma de cada plano lleva dentro la del
+    guion y la de la voz, asi que tocar una frase deja obsoletos los trescientos
+    planos de un video largo, y casi todos salen gratis de la cache: su prompt
+    no ha cambiado. Contarlos como pagados haria que el boton anunciara el video
+    entero por corregir una palabra. Lo que SI cambia el prompt de un plano es
+    su dato PROPIO -- su nota, su direccion, su cartela, su carta --, y eso es
+    lo que se mira: obsoleto y con `params.unidades[u]` distinto del que tenia
+    al sellarse.
+    """
+    obsoletas = [u for u in ctx.estado.unidades_obsoletas("assets")
+                 if str(u).startswith("escena:")]
+    if not obsoletas:
+        return set()
+    try:
+        sellados = _datos_de_sellado(ctx)
+    except Exception:                                         # noqa: BLE001
+        # sin historico legible no se sabe cual cambio: se cuenta como pagado
+        # todo lo sellado y obsoleto. Prometer de mas es una sorpresa barata;
+        # prometer «0 imagenes» y pagarlas es la cara.
+        return {u for u in obsoletas if ctx.estado.salidas_unidad("assets", u)}
+    actuales = (ctx.estado.params("assets") or {}).get("unidades") or {}
+    return {u for u in obsoletas
+            if u in sellados and (actuales.get(u) or {}) != (sellados[u] or {})}
+
+
 def _imagenes_ya_generadas(ctx, planos):
     """Cuantos planos de los que PAGAN imagen la tienen ya en la carpeta.
 
@@ -8726,6 +9011,14 @@ def _imagenes_ya_generadas(ctx, planos):
     imagenes, 7,13 $». El precio era el del VIDEO ENTERO y no el de lo que
     faltaba, asi que retomar parecia costar lo mismo que empezar de cero -- y
     con esa cifra delante lo razonable es no pulsar.
+
+    Y AL REVES TAMPOCO: TENER PNG NO ES ESTAR HECHO. Un plano con una nota
+    nueva, sellado antes de ella, tiene su PNG y la tanda lo vuelve a dibujar:
+    contarlo como hecho enseno «0 imagenes (298 ya hechas)» en el boton del MP4
+    de un video largo mientras la tanda pagaba tres planos con nota, dos veces.
+    Se descuentan los de `_planos_que_se_pagan`. Uno que nunca se sello (el de
+    una tanda cortada) sigue contando: sale de la cache, y es justo el caso para
+    el que existe este numero.
     """
     if planos.get("origen") != "el plan de este video":
         return 0
@@ -8746,6 +9039,7 @@ def _imagenes_ya_generadas(ctx, planos):
                 if c and os.path.isdir(os.path.join(c, "escenas"))]
     if not carpetas:
         return 0
+    se_pagan = _planos_que_se_pagan(ctx)
     cartelas = PASOS_MODULOS.cartelas
     hechas = 0
     for escena in escenas:
@@ -8753,6 +9047,8 @@ def _imagenes_ya_generadas(ctx, planos):
         # aqui se contara una cartela --que nunca deja PNG-- el descuento seria
         # de una imagen que nadie iba a pagar
         if cartelas.sin_imagen(escena) or escena.get("sigue_a"):
+            continue
+        if f"escena:{escena['id']}" in se_pagan:
             continue
         if any(os.path.exists(os.path.join(c, f"{escena['id']}.png"))
                for c in carpetas):
@@ -9214,9 +9510,20 @@ def generar_video(pid: str, cuerpo: dict = Body(default=None)):
                                         "ejecutar " + ", ".join(faltan),
                                    {"faltan": faltan, "tarea": tarea["id"]})
 
-        trabajo_id = ctx.gestor.lanzar("generar:" + "+".join(elegidas),
-                                       _correr_cadena, ctx, elegidas, modo, datos,
-                                       plan, paso=plan["fases"][0]["tareas"][0]["paso"])
+        # LA TANDA QUE MONTA (la del MP4) espera a que no se monte otro video;
+        # la de las imagenes, el guion o la voz no espera a nadie. Se mira el
+        # plan entero y no solo lo pendiente: una tarea al dia al planificar
+        # puede dejar de estarlo a mitad de tanda, y montaria sin cerrojo.
+        monta = any(t["id"] in TAREAS_DE_MONTAJE
+                    for ficha in plan["fases"] for t in ficha["tareas"])
+        with (_CERROJO_MONTAJE if monta else contextlib.nullcontext()):
+            if monta:
+                _exigir_sin_otro_montaje(ctx)
+            trabajo_id = ctx.gestor.lanzar(
+                "generar:" + "+".join(elegidas), _correr_cadena, ctx, elegidas,
+                modo, datos, plan, paso=plan["fases"][0]["tareas"][0]["paso"])
+            if monta:
+                _anotar_montaje(trabajo_id, ctx.id)
     _registrar_trabajo(trabajo_id, ctx.id)
     ctx.bitacora.anotar("generacion_lanzada", None, {
         "pestanas": elegidas, "modo": modo, "tareas": plan["tareas"],

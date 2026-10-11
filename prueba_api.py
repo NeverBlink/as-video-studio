@@ -16,6 +16,8 @@ Con --conservar no borra la carpeta temporal (util para mirar que quedo).
 """
 import argparse
 import ast
+import contextlib
+import copy
 import io
 import json
 import os
@@ -25,6 +27,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 RAIZ_ESTUDIO = os.path.dirname(os.path.abspath(__file__))
@@ -121,6 +124,17 @@ def arrancar(puerto, carpeta):
     # tabla escrita y use lo medido-- se caia por antiguedad. O sea que correr
     # las pruebas BORRABA lo aprendido de las voces del canal.
     entorno["ESTUDIO_ESTADISTICAS"] = os.path.join(carpeta, "estadisticas.json")
+    # Y LOS REGISTROS GLOBALES: cada evento de un proyecto se copia en la
+    # bitacora global, y sin esto los de los videos de mentira de la prueba
+    # acababan en la de verdad, mezclados con los de los videos de verdad.
+    entorno["ESTUDIO_BITACORA_GLOBAL"] = os.path.join(carpeta, "bitacora_global.jsonl")
+    entorno["ESTUDIO_COSTE_GLOBAL"] = os.path.join(carpeta, "coste_global.jsonl")
+    # LAS CLAVES DE LA MUSICA Y LOS EFECTOS SOLO DESDE LA CARPETA DE LA PRUEBA.
+    # `sonido` las busca antes en el entorno, y heredadas de la maquina que
+    # corre la suite harian que «sin claves» dependiera de quien la lanza
+    # (ver `probar_el_sonido_sin_claves`).
+    entorno.pop("JAMENDO_CLIENT_ID", None)
+    entorno.pop("FREESOUND_API_KEY", None)
     os.makedirs(entorno["ESTUDIO_SECRETOS"], exist_ok=True)
     proceso = subprocess.Popen(
         [PYTHON, APP, "--puerto", str(puerto), "--proyectos", carpeta],
@@ -150,6 +164,44 @@ def parar(proceso):
             proceso.wait(timeout=15)
         except subprocess.TimeoutExpired:
             proceso.kill()
+
+
+#: Lo que `arrancar` le desvia al servidor, y a donde. Las pruebas que van POR
+#: DENTRO importan `app.py` en este mismo proceso y necesitan lo mismo.
+DESVIADOS = (("ESTUDIO_PRESETS", "presets.json"),
+             ("ESTUDIO_BANCO_PRESETS", "banco_presets"),
+             ("ESTUDIO_SECRETOS", "secretos"),
+             ("ESTUDIO_RECETAS", "recetas.json"),
+             ("ESTUDIO_AJUSTES", "ajustes.json"),
+             ("ESTUDIO_ESTADISTICAS", "estadisticas.json"),
+             ("ESTUDIO_BITACORA_GLOBAL", "bitacora_global.jsonl"),
+             ("ESTUDIO_COSTE_GLOBAL", "coste_global.jsonl"))
+
+
+def aislar_este_proceso(carpeta):
+    """Lo que corre DENTRO de este proceso, igual de aislado que el servidor.
+
+    `arrancar` desvia los ficheros de verdad del Estudio para el servidor, pero
+    no para este proceso, y las pruebas que importan `app.py` aqui mismo
+    escribian en los de la instalacion que corre la suite. Se vio con una
+    mutacion de `_correr_regrabar` (la que corre la revision del audio a ciegas):
+    la prueba hizo lo que tenia que hacer --ponerse roja--, pero por el camino
+    dejo un consumo del CLI en el `coste_global.jsonl` de verdad, una muestra
+    en el historico de tiempos y un «ok» en la salud de la cuenta del CLI.
+
+    Va antes de que nadie importe nada: el agregado del coste, la bitacora
+    global y la carpeta de las claves se leen del entorno AL IMPORTAR. Y solo
+    con las claves que `arrancar` vuelve a fijar, para que el entorno del
+    servidor no cambie en nada.
+    """
+    for clave, nombre in DESVIADOS:
+        os.environ[clave] = os.path.join(carpeta, nombre)
+    os.makedirs(os.environ["ESTUDIO_SECRETOS"], exist_ok=True)
+
+
+def _sin_cli_de_verdad(para="el Estudio"):
+    """El `localizar` del CLI de Claude en este proceso: no lo encuentra nunca."""
+    raise RuntimeError(f"las pruebas no llaman al CLI de Claude de verdad ({para})")
 
 
 # --------------------------------------------------------------------- semilla
@@ -1022,6 +1074,38 @@ def probar_direccion(cliente, pid):
     unidad = ((antes.get("params") or {}).get("unidades") or {}).get(f"escena:{sid}") or {}
     ok("direccion" in unidad,
        f"vive en los params de SU unidad, no en un param global: {sorted(unidad)}")
+
+    # LA NOTA DE «REGENERAR» NO SE LLEVA LA DIRECCION. La cola de Imagenes
+    # mandaba solo `{feedback}` y el servidor sustituia la unidad entera: en un
+    # video largo, los veintiun planos retocados en su repaso perdieron asi su
+    # direccion. Con `fusionar_unidades` la nota se suma a lo que ya hay.
+    ruta_params = f"/api/proyectos/{pid}/pasos/assets/params"
+    respuesta, datos = cliente.put(ruta_params, {
+        "params": {"unidades": {f"escena:{sid}": {"feedback": "mas luz"}}},
+        "fusionar_unidades": True})
+    igual(respuesta.status_code, 200, "una nota fusionando responde 200")
+    fusionada = ((datos.get("params") or {}).get("unidades") or {}).get(f"escena:{sid}") or {}
+    igual((fusionada.get("direccion"), fusionada.get("feedback")), (linea, "mas luz"),
+          "la nota entra y la direccion del plano sigue ahi")
+    ok("fusionar_unidades" not in (datos.get("params") or {}),
+       "y la bandera no se guarda como un param mas")
+    respuesta, datos = cliente.put(ruta_params, {
+        "unidades": {f"escena:{sid}": {"feedback": "menos luz"}},
+        "fusionar_unidades": True})
+    fusionada = ((datos.get("params") or {}).get("unidades") or {}).get(f"escena:{sid}") or {}
+    igual((fusionada.get("direccion"), fusionada.get("feedback")), (linea, "menos luz"),
+          "tambien sin el sobre 'params': la nota se suma y no se lleva nada")
+    ok("fusionar_unidades" not in (datos.get("params") or {}),
+       "y ahi tampoco se cuela la bandera como param")
+    # SIN la bandera, lo de siempre: quien manda la unidad la manda ENTERA (asi
+    # se quita una clave). Es justo lo que no podia hacer la cola.
+    respuesta, datos = cliente.put(ruta_params, {
+        "params": {"unidades": {f"escena:{sid}": {"feedback": "mas luz"}}}})
+    sustituida = ((datos.get("params") or {}).get("unidades") or {}).get(f"escena:{sid}") or {}
+    ok("direccion" not in sustituida,
+       f"sin fusionar, la unidad se sustituye entera: {sorted(sustituida)}")
+    # se deja la unidad como estaba, para no ensuciar las pruebas de despues
+    cliente.put(ruta_params, {"params": {"unidades": {f"escena:{sid}": unidad}}})
 
     respuesta, datos = cliente.put(f"/api/proyectos/{pid}/direccion",
                                    {"plan": {sid: ""}})
@@ -3389,6 +3473,1663 @@ def probar_taller_oculto(cliente):
           "pero sigue abriendose por su id: es donde corre la generacion")
 
 
+# ------------------------------------------------- el servicio en este proceso
+
+def _servicio():
+    """`app.py` importado aqui mismo, para las pruebas que van por dentro.
+
+    Y SIN EL CLI DE CLAUDE DE VERDAD. `ESTUDIO_SIMULAR` no sirve aqui: solo lo
+    miran la voz (y con ella la reescritura de las notas de la revision), el
+    asistente y la salud, y en este proceso ni siquiera esta puesto --`arrancar`
+    se lo pone al servidor--. Lo encontro una regresion: con `_correr_regrabar`
+    corriendo la revision a ciegas, la reescritura de una nota salio al CLI de
+    verdad, cuatro segundos de opus antes de que la prueba se pusiera roja.
+    Toda llamada pasa por `localizar` (`cli_claude.construir_orden`), y el
+    modulo esta cargado dos veces: suelto, como lo importa `app.py`, y dentro
+    del paquete `pasos`.
+    """
+    sys.path.insert(0, RAIZ_ESTUDIO)
+    import app as servidor                                    # noqa: PLC0415
+    for nombre in ("cli_claude", "pasos.cli_claude"):
+        modulo = sys.modules.get(nombre)
+        if modulo is not None:
+            modulo.localizar = _sin_cli_de_verdad
+    return servidor
+
+
+@contextlib.contextmanager
+def _proyectos_en(servidor, carpeta):
+    """El servicio de este proceso mirando a una carpeta de proyectos temporal.
+
+    Sin `fijar_raiz_proyectos`, a proposito: al devolverla crearia la carpeta de
+    fabrica (`proyectos/`) dentro del repositorio si no estaba. Y los contextos
+    abiertos dentro se olvidan al salir, que son de una carpeta que se borra.
+    """
+    carpeta = os.path.abspath(carpeta)
+    with servidor._LOCK:
+        antes = servidor._ESTADO_SERVICIO["raiz"]
+        servidor._ESTADO_SERVICIO["raiz"] = carpeta
+    try:
+        yield
+    finally:
+        with servidor._LOCK:
+            servidor._ESTADO_SERVICIO["raiz"] = antes
+            for clave, ctx in list(servidor._CONTEXTOS.items()):
+                raiz = getattr(getattr(ctx, "proyecto", None), "raiz", "") or ""
+                if os.path.abspath(raiz).startswith(carpeta):
+                    servidor._CONTEXTOS.pop(clave, None)
+
+
+def _contexto_sembrado(servidor, carpeta, nombre):
+    """Un proyecto de verdad en la carpeta temporal, con ingesta, brief y guion
+    versionados (`sembrar`), y su bitacora global dentro de la misma carpeta:
+    la de fabrica es la del repositorio."""
+    from nucleo.proyecto import Proyecto                      # noqa: PLC0415
+    proyecto = Proyecto.crear(carpeta, nombre)
+    sembrar(proyecto.raiz)
+    ctx = servidor.contexto(proyecto.id)
+    ctx.bitacora.ruta_global = os.path.join(carpeta, "bitacora_global.jsonl")
+    return ctx
+
+
+def _correr_node(nombre, guion):
+    """Corre un trozo de JS en node y devuelve lo ultimo que imprime, o None.
+
+    Con nombre fijo en la carpeta temporal: por eso esta suite no se lanza dos
+    veces a la vez.
+    """
+    nodo = shutil.which("node")
+    if not nodo:
+        print("      (sin node: no se puede correr el JS; se salta)")
+        return None
+    ruta = os.path.join(tempfile.gettempdir(), nombre)
+    io.open(ruta, "w", encoding="utf-8").write(guion)
+    try:
+        corrido = subprocess.run([nodo, ruta], capture_output=True, text=True,
+                                 encoding="utf-8", timeout=90)
+    finally:
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+    if corrido.returncode != 0:
+        ok(False, f"el JS no ha corrido: {(corrido.stderr or '')[:400]}")
+        return None
+    try:
+        return json.loads(corrido.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        ok(False, f"el JS no ha dicho nada legible: {(corrido.stdout or '')[:300]}")
+        return None
+
+
+def _trozos_de_app(*cortes):
+    """Los trozos de web/app.js entre cada pareja (desde, hasta). None si falta
+    alguno: entonces se dice cual y la prueba no sigue."""
+    fuente = io.open(os.path.join(RAIZ_ESTUDIO, "web", "app.js"),
+                     encoding="utf-8").read()
+    trozos = []
+    for desde, hasta in cortes:
+        i = fuente.find(desde)
+        j = fuente.find(hasta, i + 1) if i >= 0 else -1
+        if not ok(0 <= i < j, f"el trozo «{desde[:34]}» existe en app.js"):
+            return None
+        trozos.append(fuente[i:j])
+    return trozos
+
+
+def probar_un_montaje_a_la_vez():
+    """Montar es lo UNICO exclusivo entre videos.
+
+    EL PEDIDO: el exportado del video es lo unico que no se deberia poder tener
+    dos veces a la vez. Con un video largo montandose, el dueno no podia ni
+    escuchar la voz de otro. Se corre en proceso con dos videos de mentira y un
+    montaje que espera a que lo suelten; las rutas que lanzan se llaman de
+    verdad, con un gestor que apunta lo que le piden en vez de correrlo.
+    """
+    seccion("UN MONTAJE A LA VEZ, Y NADA MAS EXCLUSIVO")
+    servidor = _servicio()
+    from nucleo.trabajos import GestorTrabajos                # noqa: PLC0415
+
+    class _Proyecto:
+        def __init__(self, pid):
+            self.id = pid
+            self.config = {"nombre": f"Video {pid}"}
+
+    class _Estado:
+        def estado_de(self, _paso):
+            return "listo"
+
+    class _Bitacora:
+        def anotar(self, *_a, **_k):
+            pass
+
+    class _GestorQueApunta:
+        """Lo que le piden lanzar, sin lanzarlo."""
+
+        def __init__(self):
+            self.lanzados = []
+
+        def lanzar(self, nombre, *_a, **_k):
+            self.lanzados.append(nombre)
+            return f"t{len(self.lanzados)}"
+
+        def listar(self, activos=True):
+            return []
+
+        def estado(self, tid):
+            return {"id": tid, "estado": "pendiente", "progreso": 0.0}
+
+    class _Ctx:
+        def __init__(self, pid, gestor):
+            self.proyecto = _Proyecto(pid)
+            self.gestor = gestor
+            self.estado = _Estado()
+            self.bitacora = _Bitacora()
+
+        @property
+        def id(self):
+            return self.proyecto.id
+
+    uno = _Ctx("montaje_uno_prueba", GestorTrabajos())
+    otro = _Ctx("montaje_otro_prueba", _GestorQueApunta())
+    with servidor._LOCK:
+        servidor._CONTEXTOS[uno.id] = uno
+        servidor._CONTEXTOS[otro.id] = otro
+    suelta = threading.Event()
+    tid = uno.gestor.lanzar("generar:video+render",
+                            lambda avisar: suelta.wait(30) and {})
+    servidor._anotar_montaje(tid, uno.id)
+    try:
+        en_marcha = servidor._montaje_en_marcha(excepto=otro.id) or {}
+        igual(en_marcha.get("proyecto"), uno.id,
+              "con un video montandose, desde otro se ve que hay un montaje")
+        try:
+            servidor._exigir_sin_otro_montaje(uno)
+            ok(True, "el mismo video no se bloquea a si mismo por esta regla "
+                     "(su tanda ya tiene la suya)")
+        except servidor.ErrorApi:
+            ok(False, "el mismo video no se bloquea a si mismo por esta regla")
+        try:
+            servidor._exigir_sin_otro_montaje(otro)
+            ok(False, "montar OTRO video a la vez se rechaza")
+        except servidor.ErrorApi as fallo:
+            ok(fallo.codigo == 409 and f"Video {uno.id}" in fallo.mensaje,
+               "montar OTRO video a la vez se rechaza con un 409 que dice cual "
+               "se esta montando")
+            ok("imágenes" in fallo.mensaje,
+               "y el mensaje dice que lo demas si se puede lanzar")
+        igual(sorted(servidor.TAREAS_DE_MONTAJE), ["callouts", "render"],
+              "solo cuentan como montaje los subtitulos con movimiento y el MP4: "
+              "imagenes, voz y guion no esperan a nadie")
+
+        # LAS CUATRO PUERTAS POR LAS QUE SE MONTA, llamadas de verdad desde el
+        # otro video: el paso suelto, la receta y el repaso; y por las mismas,
+        # lo que no monta pasa sin esperar.
+        for como, lanzar in (
+                ("el MP4 como paso suelto",
+                 lambda: servidor.lanzar_paso(otro, "render", None)),
+                ("los subtitulos como paso suelto",
+                 lambda: servidor.lanzar_paso(otro, "callouts", None)),
+                ("la receta de la pestaña del MP4",
+                 lambda: servidor.generar_pestana(otro.id, "render", {"modo": "todo"})),
+                ("«Aplicar el repaso», que acaba montando",
+                 lambda: servidor.aplicar_repaso(otro.id, {}))):
+            try:
+                lanzar()
+                ok(False, f"{como} con otro video montandose se rechaza")
+            except servidor.ErrorApi as fallo:
+                igual(fallo.codigo, 409, f"{como} con otro video montandose da 409")
+        igual(otro.gestor.lanzados, [], "y no se ha llegado a lanzar ninguno")
+        for como, lanzar, nombre in (
+                ("la voz", lambda: servidor.lanzar_paso(otro, "voz", None), "voz"),
+                ("las imagenes", lambda: servidor.lanzar_paso(otro, "assets", None),
+                 "assets"),
+                ("la receta de la voz",
+                 lambda: servidor.generar_pestana(otro.id, "voz", {"modo": "todo"}),
+                 "receta:voz"),
+                ("el repaso SIN montar",
+                 lambda: servidor.aplicar_repaso(otro.id, {"sin_montar": True}),
+                 "repaso")):
+            try:
+                lanzar()
+            except servidor.ErrorApi as fallo:
+                ok(False, f"{como} no espera a nadie, y dio {fallo.codigo}: "
+                          f"{fallo.mensaje}")
+                continue
+            ok(nombre in otro.gestor.lanzados,
+               f"{como} se lanza aunque otro video se este montando")
+    finally:
+        suelta.set()
+        limite = time.time() + 10
+        while time.time() < limite and uno.gestor.estado(tid)["estado"] == "ejecutando":
+            time.sleep(0.05)
+        ok(servidor._montaje_en_marcha(excepto=otro.id) is None,
+           "y en cuanto acaba, el otro video ya puede montar")
+        with servidor._LOCK:
+            servidor._CONTEXTOS.pop(uno.id, None)
+            servidor._CONTEXTOS.pop(otro.id, None)
+            for trabajo in list(servidor._MONTAJES):
+                if servidor._MONTAJES.get(trabajo) in (uno.id, otro.id):
+                    servidor._MONTAJES.pop(trabajo, None)
+    try:
+        servidor.lanzar_paso(otro, "render", None)
+        ok("render" in otro.gestor.lanzados,
+           "acabado el otro montaje, el MP4 se lanza")
+    except servidor.ErrorApi as fallo:
+        ok(False, f"acabado el otro montaje, el MP4 se lanza ({fallo.mensaje})")
+    finally:
+        with servidor._LOCK:
+            for trabajo in list(servidor._MONTAJES):
+                if servidor._MONTAJES.get(trabajo) == otro.id:
+                    servidor._MONTAJES.pop(trabajo, None)
+
+
+def probar_que_cada_video_tiene_su_barra():
+    """La barra y la cola de imagenes son de SU video.
+
+    LOS DOS FALLOS: con un video montandose, abrir otro lo dejaba sin
+    reproductor, con «Generar imagenes» apagado y un «Parar» que paraba el
+    primero, porque la casilla del trabajo era una para todos los videos. Y uno
+    peor que nadie habia visto: la cola de «regenerar con nota» mandaba cada
+    tanda al video ABIERTO, asi que las notas de uno se escribian -- y se
+    regeneraban, pagando -- en los planos de otro.
+
+    Y DOS ADAPTACIONES a esta version: la cola de un video que no se esta
+    mirando NO lanza tandas nuevas por su cuenta (las tandas de imagenes salen
+    de una en una y se pagan): de fondo solo se sigue la que ya iba y se marcan
+    sus notas, y la siguiente espera a que se vuelva a ese video. Y retomar una
+    regeneracion solo ocupa la barra si es del video abierto.
+
+    Se corre de verdad en node, con lo justo de la pantalla simulado.
+    """
+    seccion("CADA VIDEO TIENE SU BARRA Y SU COLA")
+    trozos = _trozos_de_app(
+        ("const COLAS = {};", "/* EL ✓ LO DICE LA NOTA"),
+        ("function aparcarTrabajoLight(", "async function reengancharTandaLight("),
+        ("function retomarColaDeImagenes(", "async function reengancharTrabajos("),
+        ("async function apuntarRegeneradas(", "function irAlMomentoDeLaNota("))
+    if trozos is None:
+        return
+    guion = r"""
+const CLAVE_VIDEO_LIGHT = 'video_light';
+const A_LA_VEZ = 3;
+const APP = { trabajos: {}, seguimientos: {}, light: { video: { pid: 'B' } } };
+const ERRORES = {};
+const llamadas = [];
+const cuerpos = {};
+const soltados = [];
+const seguidos = [];
+const guardados = [];
+let lanzadas = 0;
+const API = {
+  params: (pid, paso) => `params:${pid}:${paso}`,
+  ejecutar: (pid, paso) => `ejecutar:${pid}:${paso}`,
+  repasoNota: (pid, nid) => `nota:${pid}:${nid}`,
+  trabajo: tid => `trabajo:${tid}`,
+};
+async function pedir(url, op) {
+  llamadas.push(url);
+  cuerpos[url] = (op || {}).cuerpo;
+  if (url.startsWith('ejecutar:')) { lanzadas += 1; return { trabajo_id: `tCola${lanzadas}` }; }
+  if (url.startsWith('trabajo:')) return { estado: 'listo' };
+  return {};
+}
+function soltarSeguimiento(paso) { soltados.push(paso); delete APP.seguimientos[paso]; }
+function seguirTrabajo(paso, tid) {
+  seguidos.push([paso, tid]);
+  APP.seguimientos[paso] = { tid };
+  APP.trabajos[paso] = { id: tid, pid: APP.light.video.pid, estado: 'ejecutando' };
+}
+function videoAbierto() { return APP.light.video; }
+function repintarVideo() {}
+async function refrescarLoDibujado() {}
+function refrescarVivosLight() {}
+function guardarRepaso(d) { guardados.push(d); }
+const espera = ms => new Promise(res => setTimeout(res, ms));
+""" + "\n".join(trozos) + r"""
+(async () => {
+  const r = {};
+  // 1. la barra de OTRO video se aparca al abrir este, y su error con ella
+  APP.trabajos[CLAVE_VIDEO_LIGHT] = { id: 'tOtro', pid: 'A', estado: 'ejecutando' };
+  ERRORES[CLAVE_VIDEO_LIGHT] = 'de otro';
+  aparcarTrabajoLight('B');
+  r.aparcada = !APP.trabajos[CLAVE_VIDEO_LIGHT] && soltados.includes(CLAVE_VIDEO_LIGHT)
+    && !ERRORES[CLAVE_VIDEO_LIGHT];
+  // 2. la del mismo video, no
+  APP.trabajos[CLAVE_VIDEO_LIGHT] = { id: 'tB', pid: 'B', estado: 'ejecutando' };
+  aparcarTrabajoLight('B');
+  r.la_suya_sigue = !!APP.trabajos[CLAVE_VIDEO_LIGHT];
+  delete APP.trabajos[CLAVE_VIDEO_LIGHT];
+  // 3. la cola de A, con B abierto, NO lanza nada por su cuenta
+  const cola = colaDe('A');
+  cola.espera.push({ sid: 'S010', texto: 'quita la bandera', nid: 'R001' });
+  await soltarCola(cola);
+  r.cerrada_no_lanza = !llamadas.some(u => u.includes(':A:')) && cola.espera.length === 1;
+  // 4. al volver a A, sale: en SU video, fusionando, y en la barra
+  APP.light.video.pid = 'A';
+  reanudarColaLight('A');
+  await espera(20);
+  r.params_en_A = llamadas.includes('params:A:assets');
+  r.fusiona = !!(cuerpos['params:A:assets'] || {}).fusionar_unidades;
+  r.lanza_en_A = llamadas.includes('ejecutar:A:assets');
+  r.nada_en_B = !llamadas.some(u => u.includes(':B:'));
+  r.en_la_barra = seguidos.some(([, tid]) => tid === 'tCola1');
+  // 5. se abre B con la tanda de A corriendo, y con otra nota de A en cola
+  cola.espera.push({ sid: 'S011', texto: 'mas luz', nid: 'R002' });
+  APP.light.video.pid = 'B';
+  aparcarTrabajoLight('B');
+  r.de_fondo = !!DE_FONDO['tCola1'] && !APP.trabajos[CLAVE_VIDEO_LIGHT];
+  await espera(2600);
+  r.nota_marcada_en_A = llamadas.includes('nota:A:R001')
+    && !llamadas.some(u => u.startsWith('nota:B:'));
+  r.sin_pisar_las_de_B = guardados.length === 0;
+  r.cola_libre = cola.tid === '' && cola.corriendo.length === 0;
+  r.la_siguiente_espera = lanzadas === 1 && cola.espera.length === 1;
+  // 6. y al volver a A, sale la siguiente
+  APP.light.video.pid = 'A';
+  reanudarColaLight('A');
+  await espera(20);
+  r.al_volver_sale = lanzadas === 2 && cola.espera.length === 0;
+  r.una_cola_por_video = colaDe('A') === cola && colaDe('B') !== cola;
+  // 7. RETOMAR una regeneracion de OTRO video (la mira el reenganche de las
+  //    pestañas de antes, que va por APP.pid) no ocupa la barra del abierto
+  Object.keys(DE_FONDO).forEach(soltarDeFondo);
+  delete APP.seguimientos[CLAVE_VIDEO_LIGHT];
+  delete APP.trabajos[CLAVE_VIDEO_LIGHT];
+  APP.light.video.pid = 'B';
+  const regeneracion = { id: 'tC', proyecto: 'C', paso: 'assets', unidades: ['escena:S001'],
+                         estado: 'ejecutando', segundos: 5 };
+  const antes = seguidos.length;
+  r.retomada = retomarColaDeImagenes(regeneracion) === true;
+  r.sin_barra_ajena = !APP.trabajos[CLAVE_VIDEO_LIGHT] && seguidos.length === antes;
+  r.de_fondo_la_ajena = !!DE_FONDO['tC'] && colaDe('C').tid === 'tC';
+  Object.keys(DE_FONDO).forEach(soltarDeFondo);
+  // y la del video abierto, si
+  colaDe('C').tid = '';
+  APP.light.video.pid = 'C';
+  retomarColaDeImagenes(regeneracion);
+  r.la_propia_a_la_barra = (APP.trabajos[CLAVE_VIDEO_LIGHT] || {}).id === 'tC'
+    && seguidos.length === antes + 1;
+  Object.keys(DE_FONDO).forEach(soltarDeFondo);
+  console.log(JSON.stringify(r));
+})();
+"""
+    r = _correr_node("prueba_barra_por_video.js", guion)
+    if r is None:
+        return
+    ok(r["aparcada"], "al abrir otro video, la barra (y el error) del anterior "
+                      "se aparcan: el trabajo sigue en el servidor")
+    ok(r["la_suya_sigue"], "y la del video que se abre no se toca")
+    ok(r["cerrada_no_lanza"],
+       "la cola de un video que no se mira NO lanza tandas por su cuenta: la "
+       "nota se queda en cola")
+    ok(r["params_en_A"] and r["lanza_en_A"] and r["nada_en_B"],
+       "al volver a su video la tanda sale, y escribe y lanza en SU video")
+    ok(r["fusiona"], "la nota viaja con `fusionar_unidades`: no se lleva la "
+                     "direccion del plano")
+    ok(r["en_la_barra"], "y con su video abierto, se sigue en la barra")
+    ok(r["de_fondo"], "abrir otro video manda la tanda en curso de fondo, fuera "
+                      "de la barra del nuevo")
+    ok(r["nota_marcada_en_A"],
+       "al acabar de fondo, marca la nota como regenerada en SU video")
+    ok(r["sin_pisar_las_de_B"],
+       "y no mete las notas de un video en la pantalla del otro")
+    ok(r["cola_libre"], "la cola queda libre al acabar")
+    ok(r["la_siguiente_espera"],
+       "y la siguiente tanda espera a que se vuelva a ese video")
+    ok(r["al_volver_sale"], "al volver, sale la siguiente")
+    ok(r["una_cola_por_video"], "una cola por video")
+    ok(r["retomada"] and r["sin_barra_ajena"],
+       "retomar la regeneracion de otro video no ocupa la barra del abierto")
+    ok(r["de_fondo_la_ajena"], "pero se sigue de fondo, para marcar sus notas")
+    ok(r["la_propia_a_la_barra"],
+       "y la del video abierto si va a la barra")
+
+
+def probar_que_un_plano_con_nota_no_cuenta_como_hecho():
+    """Tener PNG no es estar hecho, pero estar obsoleto tampoco es pagarse.
+
+    EL FALLO: el boton del MP4 de un video largo decia «0 imagenes (298 ya
+    hechas)» y la tanda volvio a dibujar tres planos que llevaban una nota sin
+    aplicar, dos veces: tenian PNG, y eso bastaba para contarlos como hechos.
+
+    LA ADAPTACION: contar como pagado todo plano sellado y obsoleto tampoco
+    vale. La firma de cada plano lleva la del guion y la de la voz, asi que
+    tocar una frase deja obsoletos los trescientos, y casi todos salen gratis de
+    la cache. Se paga el que tiene su dato PROPIO cambiado respecto al que tenia
+    cuando se sello -- y la version que lo sello no es siempre la activa --. Y
+    uno de una tanda CORTADA (sin sello) sale de la cache: sigue contando.
+    """
+    seccion("UN PLANO CON NOTA NUEVA NO CUENTA COMO HECHO")
+    servidor = _servicio()
+    if servidor.PASOS_MODULOS is None:
+        ok(False, f"los pasos no cargan: {servidor.ERROR_PASOS}")
+        return
+
+    carpeta = tempfile.mkdtemp(prefix="prueba_hechas_")
+    trabajo = os.path.join(carpeta, "trabajo")
+    os.makedirs(os.path.join(trabajo, "escenas"))
+    ids = ["S001", "S002", "S003", "S004", "S005"]
+    for sid in ids:
+        with open(os.path.join(trabajo, "escenas", f"{sid}.png"), "wb") as fh:
+            fh.write(b"png")
+
+    # v1 lo sello todo; v2 solo rehizo S003, pero sus params ya llevaban la
+    # nota de S002, que se escribio para una tanda que fallo antes de dibujarlo
+    v1 = {"escena:S001": {}, "escena:S002": {"direccion": "a"},
+          "escena:S003": {"direccion": "b"}, "escena:S004": {}}
+    v2 = dict(v1, **{"escena:S002": {"direccion": "a", "feedback": "sin bandera"},
+                     "escena:S003": {"direccion": "b2"}})
+    versiones = [{"n": 1, "fecha": "2026-10-01T10:00:00", "params": {"unidades": v1}},
+                 {"n": 2, "fecha": "2026-10-02T10:00:00", "params": {"unidades": v2},
+                  "activa": True}]
+    # el registro de cada plano lleva la fecha de la pasada que lo sello; S005
+    # es de una tanda cortada y no tiene ninguno
+    manifiesto = {"escena:S001": {"fecha": "2026-10-01T10:00:00"},
+                  "escena:S002": {"fecha": "2026-10-01T10:00:00"},
+                  "escena:S003": {"fecha": "2026-10-02T10:00:00"},
+                  "escena:S004": {"fecha": "2026-10-01T10:00:00"}}
+
+    class _Proyecto:
+        def ruta_trabajo(self, _paso, crear=True):
+            return trabajo
+
+        def version_activa(self, _paso):
+            return None
+
+    class _Estado:
+        def __init__(self, obsoletas, actuales, roto=False):
+            self._o, self._a, self._roto = obsoletas, actuales, roto
+
+        def unidades_obsoletas(self, _paso):
+            return list(self._o)
+
+        def params(self, _paso):
+            return {"unidades": copy.deepcopy(self._a)}
+
+        def versiones_resumen(self, _paso):
+            return [{"n": v["n"], "fecha": v["fecha"], "activa": bool(v.get("activa"))}
+                    for v in versiones]
+
+        def versiones(self, _paso):
+            return copy.deepcopy(versiones)
+
+        def manifiesto_version(self, _paso, _n):
+            if self._roto:
+                raise ValueError("el manifiesto de assets v2 no aparece")
+            return copy.deepcopy(manifiesto)
+
+        def salidas_unidad(self, _paso, unidad):
+            return {"png": "x.png"} if unidad in manifiesto else {}
+
+    contador = {"n": 0}
+
+    class _Ctx:
+        def __init__(self, obsoletas, actuales, roto=False):
+            contador["n"] += 1                 # cada caso, su memoria de sellado
+            self.id = f"prueba_hechas_{contador['n']}"
+            self.proyecto = _Proyecto()
+            self.estado = _Estado(obsoletas, actuales, roto)
+
+    todas = [f"escena:{s}" for s in ids]
+    al_dia = dict(v2, **{"escena:S002": {"direccion": "a"}})   # la nota se quito
+    p6 = servidor.PASOS_MODULOS.p6_assets
+    original = p6.plan_actual
+    p6.plan_actual = lambda *_a, **_k: {"escenas": [{"id": s} for s in ids]}
+    planos = {"origen": "el plan de este video", "con_imagen": len(ids)}
+    try:
+        igual(servidor._imagenes_ya_generadas(_Ctx([], v2), planos), 5,
+              "con todo al dia, los cinco PNG cuentan como hechos")
+        igual(servidor._imagenes_ya_generadas(_Ctx(todas, al_dia), planos), 5,
+              "obsoletos por un cambio AGUAS ARRIBA (el guion, la voz) y con su "
+              "dato propio igual que al sellarse: salen de la cache, NO se pagan")
+        igual(servidor._imagenes_ya_generadas(
+                  _Ctx(["escena:S002"], v2), planos), 4,
+              "un plano con nota nueva NO cuenta como hecho, aunque la version "
+              "activa ya lleve esa nota: se sello en la anterior, sin ella")
+        con_cambio = dict(v2, **{"escena:S004": {"carta": "picado"}})
+        igual(servidor._imagenes_ya_generadas(
+                  _Ctx(["escena:S002", "escena:S004"], con_cambio), planos), 3,
+              "ni uno al que se le ha forzado otra carta: cambia su prompt")
+        igual(servidor._imagenes_ya_generadas(
+                  _Ctx(["escena:S005"], dict(v2, **{"escena:S005": {"feedback": "x"}})),
+                  planos), 5,
+              "uno de una tanda cortada (sin sello) SI cuenta: sale de la cache")
+        igual(servidor._imagenes_ya_generadas(
+                  _Ctx(["escena:S001", "escena:S003"], v2, roto=True), planos), 3,
+              "sin historico legible se cuenta como pagado lo sellado y obsoleto: "
+              "prometer de mas antes que «0 imagenes» y pagarlas")
+        # y el previsto de la tanda dice lo mismo que esta cuenta
+        ctx = _Ctx(["escena:S002"], v2)
+        ctx.estado.params = lambda _paso: {"unidades": copy.deepcopy(v2),
+                                           "calidad": "low"}
+        guardado = servidor._planos_previstos
+        servidor._planos_previstos = lambda _ctx: planos
+        try:
+            coste = servidor._coste_previsto(ctx, ["video"])
+        finally:
+            servidor._planos_previstos = guardado
+        igual((coste["imagenes_hechas"], coste["imagenes_por_generar"]), (4, 1),
+              "el boton cuenta 4 hechas y 1 por pagar, no «0 imagenes»")
+    finally:
+        p6.plan_actual = original
+        shutil.rmtree(carpeta, ignore_errors=True)
+        for clave in list(servidor._SELLADOS):
+            if str(clave).startswith("prueba_hechas_"):
+                servidor._SELLADOS.pop(clave, None)
+
+
+def probar_que_el_mp4_suelto_tiene_barra():
+    """El montaje lanzado aparte se ve en la pantalla, con su cuenta atras.
+
+    EL FALLO: el MP4 de un video largo, relanzado como paso suelto y no como
+    tanda, se llamaba «render» y no «generar:…», y la pantalla decia «todavia no
+    hay video» sin barra con el montaje corriendo. Lo mismo «Aplicar el
+    repaso», que acaba montando y se llama «repaso». Se buscan POR NOMBRE y no
+    por paso: la musica y los efectos tambien van en el paso `render` y no son
+    ningun montaje. Y la cuenta atras, por su propio ritmo: el historial decia
+    nueve minutos para un render de dos horas.
+
+    Va tambien lo que la hace posible: un trabajo nuevo en la ranura no hereda
+    las muestras de avance del anterior (`seguirTrabajo`).
+
+    Se corre de verdad en node, con lo justo de la pantalla simulado.
+    """
+    seccion("EL MP4 SUELTO TIENE BARRA Y CUENTA ATRAS")
+    trozos = _trozos_de_app(
+        ("const MONTAJES_SUELTOS", "APP.light.video = {"),
+        ("async function reengancharTandaLight(", "async function leerGuionLight("),
+        ("function restanteTandaLight(", "/* Lo que va a hacer la próxima tanda"),
+        ("function arranqueDe(", "function trabajando("))
+    if trozos is None:
+        return
+    guion = r"""
+const CLAVE_VIDEO_LIGHT = 'video_light';
+let APP, vivos, seguidos, pedidas, murio, retomadas, repasos;
+function reset(lista) {
+  APP = { trabajos: {}, seguimientos: {}, light: { video: { pid: 'L', vista: 'previa' } } };
+  vivos = lista; seguidos = []; pedidas = []; murio = 0; retomadas = []; repasos = 0;
+}
+const API = { trabajosVivos: () => 'vivos', proyecto: pid => `proyecto:${pid}`,
+              eventos: tid => `eventos:${tid}`, trabajo: tid => `trabajo:${tid}` };
+async function pedir(url) {
+  pedidas.push(url);
+  if (url.startsWith('vivos')) return { trabajos: vivos };
+  return { segundos: 563 };
+}
+function retomarColaDeImagenes(t) { retomadas.push(t); return true; }
+async function contarLaTandaQueMurio() { murio += 1; }
+async function cargarVideoLight() {}
+async function cargarRepaso() { repasos += 1; }
+const PREVIA = { ficha: {} };
+function pintarLight() {}
+function refrescarPlanosLight() {}
+function refrescarVivosLight() {}
+function pintarTrabajo() {}
+function duracionCorta(s) { return `${Math.round(s)}s`; }
+""" + "\n".join(trozos) + r"""
+const seguirDeVerdad = seguirTrabajo;
+seguirTrabajo = (paso, tid) => { seguidos.push([paso, tid]); };
+(async () => {
+  const r = {};
+  // el MP4 suelto: a la barra, a la pantalla del video, sin plan de otra tanda
+  reset([{ id: 'tR', nombre: 'render', paso: 'render', estado: 'ejecutando', segundos: 600 }]);
+  await reengancharTandaLight('L');
+  r.suelto_seguido = seguidos.length === 1 && seguidos[0][1] === 'tR';
+  r.suelto_en_video = APP.light.video.vista === 'video';
+  r.sin_plan_ajeno = !pedidas.some(u => u.includes('generar?tanda='));
+  const inicio = (APP.trabajos[CLAVE_VIDEO_LIGHT] || {}).inicio || 0;
+  r.reloj_de_lo_que_lleva = Math.abs(Date.now() - inicio - 600000) < 5000;
+  // el repaso: a la barra, sin moverlo de las diapositivas
+  reset([{ id: 'tP', nombre: 'repaso', paso: 'render', estado: 'ejecutando' }]);
+  await reengancharTandaLight('L');
+  r.repaso_seguido = seguidos.length === 1 && seguidos[0][1] === 'tP';
+  r.repaso_quieto = APP.light.video.vista === 'previa';
+  // la musica y los efectos van en el paso render, y NO son un montaje
+  reset([{ id: 'tB', nombre: 'banda_sonora', paso: 'render', estado: 'ejecutando' },
+         { id: 'tE', nombre: 'efectos', paso: 'render', estado: 'ejecutando' }]);
+  await reengancharTandaLight('L');
+  r.sonido_no = seguidos.length === 0 && murio === 1;
+  // si tambien hay una tanda, manda la tanda
+  reset([{ id: 'tR', nombre: 'render', paso: 'render' },
+         { id: 'tG', nombre: 'generar:video+render', paso: 'assets' }]);
+  await reengancharTandaLight('L');
+  r.tanda_primero = seguidos.length === 1 && seguidos[0][1] === 'tG'
+    && pedidas.some(u => u.endsWith('tanda=render'));
+  // una regeneracion de imagenes se devuelve a su cola
+  reset([{ id: 'tI', nombre: 'assets', paso: 'assets', unidades: ['escena:S001'] }]);
+  await reengancharTandaLight('L');
+  r.regeneracion = retomadas.length === 1 && retomadas[0].proyecto === 'L' && murio === 0;
+  reset([]);
+  await reengancharTandaLight('L');
+  r.sin_nada = seguidos.length === 0 && murio === 1;
+  // la cuenta atras del montaje: por su ritmo, no por el historial
+  reset([]);
+  const ahora = Date.now();
+  APP.light.video.planDe = 'tR';
+  APP.light.video.plan = { segundos: 563 };
+  const render = { id: 'tR', nombre: 'render', paso: 'render', inicio: ahora - 600000,
+                   muestras: [{ t: ahora - 60000, f: 0.10 }, { t: ahora, f: 0.16 }] };
+  const proyectado = restanteTandaLight(render, 0.16);
+  const segundos = Number((proyectado.match(/~(\d+)s/) || [])[1]);
+  r.proyectado = /al ritmo de ahora/.test(proyectado) && segundos > 730 && segundos < 745;
+  r.repaso_proyectado = /al ritmo de ahora/.test(restanteTandaLight(
+    Object.assign({}, render, { id: 'tP', nombre: 'repaso' }), 0.16));
+  r.una_muestra_calla = restanteTandaLight(
+    Object.assign({}, render, { muestras: [{ t: ahora, f: 0.16 }] }), 0.16) === '';
+  r.muxeando_calla = restanteTandaLight(Object.assign({}, render, {
+    muestras: [{ t: ahora - 60000, f: 0.85 }, { t: ahora, f: 0.91 }] }), 0.91) === '';
+  // la musica no se proyecta como un montaje
+  r.musica_sin_ritmo = restanteTandaLight(
+    Object.assign({}, render, { id: 'tB', nombre: 'banda_sonora' }), 0.16) === '';
+  // y la tanda sigue contando desde su previsto
+  APP.light.video.planDe = 'tG';
+  APP.light.video.plan = { segundos: 400 };
+  const tanda = restanteTandaLight({ id: 'tG', nombre: 'generar:video', paso: 'assets',
+                                     inicio: ahora - 100000 }, 0.3);
+  r.tanda_con_previsto = /^quedan ~\d+s$/.test(tanda);
+  // LA RANURA NO HEREDA LO DEL TRABAJO ANTERIOR: con su ultima muestra en el
+  // 100 %, las del nuevo no se apuntaban nunca y su cuenta atras no salia
+  seguirTrabajo = seguirDeVerdad;
+  APP.trabajos[CLAVE_VIDEO_LIGHT] = { id: 'tViejo', estado: 'listo', progreso: 1,
+    publico: 'Listo', muestras: [{ t: 1, f: 1 }], pid: 'X' };
+  seguirTrabajo(CLAVE_VIDEO_LIGHT, 'tNuevo');
+  const nuevo = APP.trabajos[CLAVE_VIDEO_LIGHT];
+  r.sin_herencia = nuevo.id === 'tNuevo' && !(nuevo.muestras || []).length
+    && nuevo.progreso === 0 && nuevo.publico !== 'Listo';
+  r.con_su_video = nuevo.pid === 'L';
+  nuevo.muestras = [{ t: 2, f: 0.2 }];
+  seguirTrabajo(CLAVE_VIDEO_LIGHT, 'tNuevo');
+  r.las_suyas_se_quedan = (APP.trabajos[CLAVE_VIDEO_LIGHT].muestras || []).length === 1;
+  soltarSeguimiento(CLAVE_VIDEO_LIGHT);
+  // sin esperar a la red de seguridad de cuatro segundos de `seguirTrabajo`
+  process.stdout.write(JSON.stringify(r) + '\n', () => process.exit(0));
+})();
+"""
+    r = _correr_node("prueba_mp4_suelto.js", guion)
+    if r is None:
+        return
+    ok(r["suelto_seguido"], "un MP4 suelto en marcha se pone en la barra")
+    ok(r["suelto_en_video"], "como la tanda del MP4: en la pantalla del video")
+    ok(r["sin_plan_ajeno"], "sin pedir el previsto de otra tanda, que no es el suyo")
+    ok(r["reloj_de_lo_que_lleva"], "y con el reloj de lo que ya lleva corriendo")
+    ok(r["repaso_seguido"], "«Aplicar el repaso» en marcha tambien tiene barra")
+    ok(r["repaso_quieto"], "sin moverlo de las diapositivas, desde donde se aplica")
+    ok(r["sonido_no"], "la musica y los efectos, que van en el paso render, no se "
+                       "toman por un montaje")
+    ok(r["tanda_primero"], "si tambien hay una tanda, manda la tanda")
+    ok(r["regeneracion"], "una regeneracion de imagenes se devuelve a su cola")
+    ok(r["sin_nada"], "sin nada vivo, se cuenta la tanda que murio, como antes")
+    ok(r["proyectado"], "la cuenta atras del MP4 sale de su ritmo y dice que lo es")
+    ok(r["repaso_proyectado"], "y la del repaso, igual")
+    ok(r["una_muestra_calla"], "con una sola muestra no se proyecta nada")
+    ok(r["muxeando_calla"], "pasado el ultimo clip (muxeo) se calla")
+    ok(r["musica_sin_ritmo"], "la musica no se proyecta como un montaje")
+    ok(r["tanda_con_previsto"], "la tanda sigue contando desde su previsto")
+    ok(r["sin_herencia"], "un trabajo nuevo en la ranura no hereda las muestras, "
+                          "el progreso ni el «Listo» del anterior")
+    ok(r["con_su_video"], "y apunta de que video es")
+    ok(r["las_suyas_se_quedan"], "las suyas, en cambio, se quedan")
+
+
+def probar_regrabar_un_tramo(cliente):
+    """Regrabar un tramo de la voz se guarda de verdad, y sin pagar de mas.
+
+    EL FALLO: la toma cosida se quedaba en la carpeta de trabajo de la voz y la
+    version activa seguia siendo la de antes, asi que la pantalla ensenaba el
+    texto y el audio viejos y regrabar parecia no hacer nada -- y la siguiente
+    toma pisaba la carpeta, o sea que el tramo pagado se perdia.
+
+    De punta a punta por la API, con la voz simulada y sin microcambio (que
+    llamaria al CLI): se edita un bloque a mano y se regraba su tramo con lo
+    escrito, que es el boton «Regrabar este tramo con mi texto».
+    """
+    seccion("REGRABAR UN TRAMO SE GUARDA, Y SIN REGRABAR LA TOMA ENTERA")
+    respuesta, datos = cliente.post("/api/proyectos", {"nombre": "Prueba regrabar"})
+    pid = (datos.get("proyecto") or {}).get("id") or ""
+    if not ok(bool(pid), "hay un video donde regrabar"):
+        return
+    sembrar(os.path.join(cliente.carpeta, pid))
+    for paso in ("voz", "revision_audio"):
+        respuesta, lanzado = cliente.post(f"/api/proyectos/{pid}/pasos/{paso}/ejecutar", {})
+        ficha = esperar_trabajo(cliente, (lanzado or {}).get("trabajo_id"))
+        igual(ficha["estado"], "listo", f"la {paso} de partida sale ({ficha.get('error')})")
+    respuesta, meta = cliente.get(f"/a/{pid}/pasos/voz/v1/audio_meta.json")
+    secciones = (meta or {}).get("secciones") or []
+    if not ok(secciones and secciones[0].get("bloques"), "la toma trae sus secciones"):
+        return
+    sid = secciones[0]["id"]
+    bid = secciones[0]["bloques"][1]
+    nuevo = "Este bloque se ha reescrito a mano para la prueba de regrabar."
+    cliente.put(f"/api/proyectos/{pid}/pasos/guion/params",
+                {"params": {"bloques": {bid: {"texto": nuevo}}}})
+    respuesta, voz = cliente.get(f"/api/proyectos/{pid}/pasos/voz")
+    igual(voz.get("estado"), "obsoleto",
+          "con un bloque editado a mano, la voz ya no dice lo que hay escrito")
+
+    respuesta, lanzado = cliente.post(
+        f"/api/proyectos/{pid}/voz/secciones/{sid}/regrabar", {"peticion": ""})
+    igual(respuesta.status_code, 202, "regrabar el tramo responde 202")
+    ficha = esperar_trabajo(cliente, (lanzado or {}).get("trabajo_id"))
+    igual(ficha["estado"], "listo", f"y el trabajo acaba bien ({ficha.get('error')})")
+    resultado = ficha.get("resultado") or {}
+    respuesta, voz = cliente.get(f"/api/proyectos/{pid}/pasos/voz")
+    igual(voz.get("version_activa"), 2, "la toma cosida es la version NUEVA de la voz")
+    igual(resultado.get("version"), 2, "y el trabajo dice cual")
+    igual(voz.get("estado"), "listo",
+          "y la voz queda al dia: la tanda no ofrece regrabarla entera")
+    respuesta, meta = cliente.get(f"/a/{pid}/pasos/voz/v2/audio_meta.json")
+    dicho = {b.get("id"): b.get("texto") for b in (meta or {}).get("bloques") or []}
+    igual(dicho.get(bid), nuevo, "y la toma nueva dice lo que se escribio")
+    respuesta, locutado = cliente.get(f"/a/{pid}/pasos/voz/v2/guion_locutado.json")
+    igual(respuesta.status_code, 200,
+          "con lo locutado al lado, como deja una toma entera")
+    ok(any(b.get("texto") == nuevo for b in (locutado or {}).get("bloques") or []),
+       "y dice el texto nuevo")
+
+    respuesta, revision = cliente.get(f"/api/proyectos/{pid}/pasos/revision_audio")
+    igual(revision.get("version_activa"), 2,
+          "la revision del audio --la toma que suena-- pasa a ser la nueva")
+    igual(revision.get("estado"), "listo", "y queda al dia")
+    ok((revision.get("salidas") or {}).get("sellada_del_paso_4") is True,
+       "SELLADA con la toma de la voz, sin regrabarla: no se paga dos veces")
+    igual((resultado.get("revision_audio") or {}).get("por_que_no"), "",
+          "y el trabajo no tiene nada que explicar")
+    respuesta, plan = cliente.get(f"/api/proyectos/{pid}/generar?tanda=voz")
+    pendientes = [t["id"] for f in plan.get("fases") or [] for t in f["tareas"]
+                  if t.get("se_hace")]
+    igual(pendientes, [], "y a la tanda de la voz no le queda nada que hacer: no "
+                          "ofrece regrabar (ni pagar) la toma entera")
+
+    # CON NOTAS SIN APLICAR EN LA REVISION, ponerla al dia seria regrabar la
+    # toma ENTERA (se paga). No se hace sola: se dice por que y se queda como
+    # estaba hasta que alguien pida la tanda de la voz.
+    cliente.put(f"/api/proyectos/{pid}/pasos/revision_audio/params",
+                {"params": {"comentarios": [{"id": "C001", "bloque_id": bid,
+                                             "comentario": "mas despacio"}]}})
+    respuesta, lanzado = cliente.post(
+        f"/api/proyectos/{pid}/voz/secciones/{sid}/regrabar", {"peticion": ""})
+    ficha = esperar_trabajo(cliente, (lanzado or {}).get("trabajo_id"))
+    igual(ficha["estado"], "listo", f"regrabar con notas en la revision acaba bien "
+                                    f"({ficha.get('error')})")
+    respuesta, voz = cliente.get(f"/api/proyectos/{pid}/pasos/voz")
+    igual((voz.get("version_activa"), voz.get("estado")), (3, "listo"),
+          "la voz se sella igual")
+    respuesta, revision = cliente.get(f"/api/proyectos/{pid}/pasos/revision_audio")
+    igual(revision.get("version_activa"), 2,
+          "pero la revision NO se rehace: con notas, rehacerla es regrabar la "
+          "toma entera")
+    ok("notas" in str(((ficha.get("resultado") or {}).get("revision_audio") or {})
+                      .get("por_que_no") or ""),
+       "y el trabajo dice por que no se ha puesto al dia")
+    cliente.delete(f"/api/proyectos/{pid}")
+
+
+def probar_que_la_voz_regrabada_queda_al_dia():
+    """Las dos salvaguardas de sellar lo regrabado, por dentro.
+
+    (a) Con microcambio, el trabajo REESCRIBE el guion, y la frase nueva entra
+    en la firma de la voz. Sellada con la foto de entradas de cuando arranco,
+    la voz recien regrabada salia «no al dia» y la tanda ofrecia regrabar la
+    toma ENTERA. Se vuelve a hacer la foto despues de escribir el guion... pero
+    solo si nadie ha tocado nada mientras tanto: si alguien edita otro bloque a
+    la vez, la toma no lo dice y la voz tiene que seguir saliendo no al dia.
+
+    (b) Poner al dia la revision nunca regraba la toma entera sin pedirlo.
+
+    El microcambio llama al CLI y la grabacion a Cartesia: aqui los dos van
+    sustituidos, y la toma entera esta prohibida (si se pidiera, la prueba
+    falla en vez de pagar). Tambien la reescritura de las notas de la revision,
+    que es lo primero que haria una revision corrida a ciegas: sale al CLI.
+    """
+    seccion("LA VOZ REGRABADA QUEDA AL DIA SIN MENTIR, Y SU REVISION NO SE REGRABA")
+    servidor = _servicio()
+    if servidor.PASOS_MODULOS is None:
+        ok(False, f"los pasos no cargan: {servidor.ERROR_PASOS}")
+        return
+    from nucleo.proyecto import escribir_json                 # noqa: PLC0415
+    p4 = servidor.PASOS_MODULOS.p4_voz
+    p5 = servidor.PASOS_MODULOS.p5_revision_audio
+    carpeta = tempfile.mkdtemp(prefix="prueba_regrabar_")
+    pagadas = []
+    pedido = {"cambia": {}, "durante": None}
+
+    def _toma_entera(*_a, **_k):
+        pagadas.append("toma entera")
+        raise AssertionError("se ha intentado regrabar la toma ENTERA")
+
+    def _notas_con_el_cli(*_a, **_k):
+        pagadas.append("reescritura de una nota con el CLI")
+        raise AssertionError("se ha intentado reescribir una nota con el CLI")
+
+    def _regrabar_de_mentira(bloques, seccion_id, cfg, meta, destino, peticion="",
+                             ajuste=None, avisar=None, cwd=None):
+        """El microcambio y la grabacion del tramo, sin CLI ni Cartesia."""
+        nuevos = [dict(b, texto=pedido["cambia"].get(b["id"], b["texto"]))
+                  for b in bloques]
+        if pedido["durante"]:
+            pedido["durante"]()
+        salidas = dict(meta)
+        salidas.update({"bloques": [dict(b) for b in nuevos],
+                        "resumen": f"{seccion_id} regrabada"})
+        escribir_json(os.path.join(destino, "audio_meta.json"), salidas)
+        with open(os.path.join(destino, meta.get("archivo") or "narracion.wav"),
+                  "wb") as fh:
+            fh.write(b"RIFF-regrabada")
+        return salidas, nuevos
+
+    guardados = (p4.regrabar_seccion, p4.sintetizar_bloques, p5.reescribir_bloque)
+    p4.regrabar_seccion = _regrabar_de_mentira
+    p4.sintetizar_bloques = _toma_entera
+    p5.reescribir_bloque = _notas_con_el_cli
+    try:
+        with _proyectos_en(servidor, carpeta):
+            ctx = _contexto_sembrado(servidor, carpeta, "Regrabar por dentro")
+            # una toma de la voz como la deja p4, hecha a mano: sin pagar nada
+            ctx.estado.set_params("voz", {"voz_id": "voz-de-prueba"})
+            cfg = p4.resolver_params(p4.params_con_idioma(
+                ctx.proyecto, ctx.estado.params("voz")))
+            destino = ctx.proyecto.ruta_trabajo("voz")
+            with open(os.path.join(destino, "narracion.wav"), "wb") as fh:
+                fh.write(b"RIFF-toma")
+            bloques = [{"id": b["id"], "texto": b["texto"]} for b in BLOQUES]
+            meta = {"archivo": "narracion.wav", "meta": "audio_meta.json",
+                    "duracion": 80.0, "controles": cfg, "bloques": bloques,
+                    "palabras": [],
+                    "secciones": [{"id": "SB001", "t_in": 0.0, "t_out": 9.0,
+                                   "bloques": [b["id"] for b in bloques[:5]]},
+                                  {"id": "SB002", "t_in": 9.0, "t_out": 80.0,
+                                   "bloques": [b["id"] for b in bloques[5:]]}]}
+            escribir_json(os.path.join(destino, "audio_meta.json"), meta)
+            ctx.estado.completar("voz", {k: v for k, v in meta.items()
+                                         if k != "palabras"})
+            version, por_que_no = servidor._revision_al_dia_sin_regrabar(
+                lambda *_a, **_k: None, ctx)
+            igual((version, por_que_no), (1, ""),
+                  "la revision de esa toma se sella sin regrabar")
+
+            def regrabar(cambia, durante=None):
+                pedido["cambia"], pedido["durante"] = cambia, durante
+                ctx.estado.marcar_ejecutando("voz")   # lo que hace el gestor
+                return servidor._correr_regrabar(
+                    lambda *_a, **_k: None, ctx, "SB001", "cambia esa frase",
+                    {"modelo": "haiku", "esfuerzo": "low"})
+
+            # (a) el microcambio reescribe el guion, y la voz queda al dia
+            frase = "El segundo bloque, con la frase que se ha pedido cambiar."
+            salida = regrabar({"B002": frase})
+            igual(salida.get("bloques_cambiados"), ["B002"], "el tramo cambia B002")
+            editado = ((ctx.estado.params("guion") or {}).get("bloques") or {}).get("B002")
+            igual((editado or {}).get("texto"), frase, "y el cambio viaja al guion")
+            # `al_dia` es lo que mira la tanda para decidir si regraba la voz
+            # (`_esta_al_dia`), y es el que se quedaba en falso
+            ok(ctx.estado.al_dia("voz"),
+               "la voz regrabada queda AL DIA aunque el trabajo haya movido el "
+               "guion: la tanda no ofrece regrabarla entera")
+            igual(ctx.estado.estado_de("voz"), "listo", "y la pantalla lo dice")
+            igual(ctx.proyecto.version_activa("voz"), 2, "en una version nueva")
+            igual(ctx.estado.estado_de("revision_audio"), "listo",
+                  "y la revision, puesta al dia con ella")
+            ok((ctx.estado.salidas("revision_audio") or {}).get("sellada_del_paso_4"),
+               "sellandola, no regrabandola")
+
+            # si alguien edita OTRO bloque mientras se regraba, la toma no lo
+            # dice: la voz tiene que seguir saliendo no al dia
+            def otro_bloque():
+                ediciones = dict((ctx.estado.params("guion") or {}).get("bloques") or {})
+                ediciones["B010"] = {"texto": "Otro bloque editado mientras se regrababa."}
+                ctx.estado.actualizar_params("guion", {"bloques": ediciones})
+
+            regrabar({"B003": "El tercero, tambien cambiado."}, otro_bloque)
+            ok(not ctx.estado.al_dia("voz"),
+               "con otro bloque editado a la vez, la voz sale NO al dia: la "
+               "toma no dice lo que se escribio mientras tanto")
+            igual(ctx.proyecto.version_activa("revision_audio"), 2,
+                  "y la revision no se sella sobre una toma que no cuadra")
+
+            # (b) con notas sin aplicar en la revision, no se toca
+            ctx.estado.set_params("revision_audio", {"comentarios": [
+                {"id": "C001", "bloque_id": "B004", "comentario": "mas despacio"}]})
+            antes = ctx.proyecto.version_activa("revision_audio")
+            salida = regrabar({"B004": "El cuarto, cambiado a peticion."})
+            ok(ctx.estado.al_dia("voz"), "la voz se sella al dia")
+            igual(ctx.proyecto.version_activa("revision_audio"), antes,
+                  "con notas sin aplicar, la revision no se pone al dia sola")
+            ok("notas" in ((salida.get("revision_audio") or {}).get("por_que_no") or ""),
+               "y se dice por que")
+            igual(pagadas, [], "y en ningun momento se ha pedido regrabar la toma entera")
+
+            # NI CON LA VOZ CORRIENDO: dos trabajos en la carpeta de trabajo de
+            # la voz dejan una toma a medias de cada uno
+            suelta = threading.Event()
+            tid = ctx.gestor.lanzar("voz", lambda avisar: suelta.wait(30) and {},
+                                    paso="voz")
+            try:
+                servidor.regrabar_seccion(ctx.id, "SB001", {"peticion": ""})
+                ok(False, "regrabar con la voz generandose se rechaza")
+            except servidor.ErrorApi as fallo:
+                igual(fallo.codigo, 409, "regrabar con la voz generandose da 409")
+            finally:
+                suelta.set()
+                ctx.gestor.esperar(tid, 10)
+    finally:
+        p4.regrabar_seccion, p4.sintetizar_bloques, p5.reescribir_bloque = guardados
+        shutil.rmtree(carpeta, ignore_errors=True)
+
+
+def probar_la_galeria_y_el_desglose(cliente, pid):
+    """Tres puertas que se cerraron al quitar el modo editor, y que se abren.
+
+      · «Tus videos» solo enseñaba los que llevaban la marca `video_light`: un
+        video duplicado, uno creado por la API o uno de antes no salia, y no
+        habia ningun camino hasta el. Salen todos -- y nunca un taller de
+        estilo, que no es un video y lo quita el servidor.
+      · La papelera solo se abria desde el menu del proyecto de la barra de
+        arriba, escondido en esta pantalla, mientras los avisos de «Apartar»
+        mandaban a recuperar de ella. Boton junto a «Tus videos», tambien sin
+        ningun video.
+      · El desglose del coste no tenia puerta (el aviso mandaba al modo editor,
+        que ya no existe) y leia el proyecto de las pestañas de antes, no el
+        video de la pantalla.
+    """
+    seccion("TUS VIDEOS, LA PAPELERA Y EL DESGLOSE DEL COSTE")
+    # EL SERVIDOR: el duplicado no lleva la marca, y aun asi es un video
+    respuesta, copia = cliente.post(f"/api/proyectos/{pid}/duplicar",
+                                    {"nombre": "Copia para la galeria"})
+    copia_id = ((copia or {}).get("proyecto") or {}).get("id") or ""
+    taller = _taller(cliente, "taller que no es un video")
+    respuesta, lista = cliente.get("/api/proyectos")
+    por_id = {p["id"]: p for p in (lista or {}).get("proyectos") or []}
+    ok(copia_id in por_id and not por_id[copia_id].get("video_light"),
+       "un video duplicado sale en la lista y NO lleva la marca del modo light: "
+       "por eso «Tus videos» no puede filtrar por ella")
+    ok(taller not in por_id, "un taller de estilo no sale en la lista")
+    cliente.delete(f"/api/proyectos/{copia_id}")
+    cliente.delete(f"/api/presets-light/talleres/{taller}")
+
+    # LA PANTALLA, en node con un DOM de mentira
+    trozos = _trozos_de_app(
+        ("async function cargarGaleriaLight(", "function presetsLight()"),
+        ("function vistaGaleriaLight(", "/* RETOMAR VUELVE CON EL FORMULARIO RELLENO"),
+        ("function costeLightAhora(", "/* --------------------------------------------------------------- el guion */"),
+        ("async function pintarDesgloseCoste(", "function conmutarCoste("))
+    if trozos is None:
+        return
+    guion = r"""
+function h(tag, props, ...hijos) {
+  const lista = hijos.flat(4).filter(x => x !== null && x !== undefined && x !== false);
+  const n = { tag, props: props || {}, hijos: lista, children: lista,
+              appendChild(x) { this.hijos.push(x); return x; } };
+  if ((props || {}).value !== undefined) n.value = String(props.value);
+  return n;
+}
+function vaciar(n) { n.hijos.length = 0; return n; }
+function texto(n) { return typeof n === 'string' ? n : ((n && n.hijos) || []).map(texto).join(''); }
+function buscar(n, f) {
+  if (!n || typeof n !== 'object') return null;
+  if (f(n)) return n;
+  for (const x of n.hijos || []) { const r = buscar(x, f); if (r) return r; }
+  return null;
+}
+const DOM = { '#coste-detalle': h('div', {}) };
+const $ = sel => DOM[sel];
+let APP = { pid: 'P', light: { datos: null, cargando: false, encargo: null,
+                               video: { pid: 'L', coste: null } } };
+const COSTE = { datos: { nombre: 'el proyecto de antes' }, abierto: true };
+const API = { presetsLight: () => 'presets', proyectos: () => 'proyectos',
+              costePorPaso: pid => `porPaso:${pid}`, costePresupuesto: pid => `presupuesto:${pid}` };
+const pedidas = [];
+async function pedir(url, op) {
+  pedidas.push(url);
+  if (url === 'presets') return { presets: [], sueltos: [] };
+  if (url === 'proyectos') return { proyectos: [
+    { id: 'creado_en_la_pantalla', video_light: true, actualizado: '2026-10-01' },
+    { id: 'duplicado', video_light: false, actualizado: '2026-10-02' }] };
+  if (url.startsWith('porPaso:')) return { pasos: [] };
+  if (url.startsWith('presupuesto:')) return { total_usd: 1, presupuesto_usd: 5, nombre: 'El de la pantalla' };
+  return {};
+}
+let papeleras = 0, conmutados = 0, vivos = 0;
+function cargarCatalogoRecetas() { return Promise.resolve(); }
+function pintarLight() {}
+function ritmoPorDefecto() { return 'medio'; }
+function presetsLight() { return (APP.light.datos || {}).presets || []; }
+function videosLight() { return ((APP.light.datos || {}).videos || []).slice(); }
+function tarjetaEstiloLight() { return h('div', {}); }
+function tarjetaNuevoEstilo() { return h('button', {}, '+'); }
+function fechaCorta(x) { return String(x || ''); }
+function abrirVideoLight() {}
+function renombrarVideoLight() {}
+function apartarVideoLight() {}
+function retomarTallerLight() {}
+function descartarTallerLight() {}
+function abrirPapelera() { papeleras += 1; }
+function refrescarCosteLight() {}
+function conmutarCoste() { conmutados += 1; }
+function refrescarVivosLight() { vivos += 1; }
+function pintarCoste() {}
+function toast() {}
+function partirError(x) { return { titular: String(x) }; }
+function listaDe(x) { return Array.isArray(x) ? x : []; }
+function oHueco(a, b) { return a || b || '—'; }
+function cifra(n, d) { return String(n === undefined || n === null ? d : n); }
+function seccionTarifaTTS() { return null; }
+function proveedorDe() { return { tokens: { total: 0 }, cantidad: { imagenes: 0 } }; }
+function importeCoste() { return h('span', {}); }
+function corto(x) { return String(x); }
+""" + "\n".join(trozos) + r"""
+(async () => {
+  const r = {};
+  // «Tus vídeos»: TODOS los que sirve el servidor, marca o no marca
+  await cargarGaleriaLight(true);
+  const ids = (APP.light.datos.videos || []).map(v => v.id);
+  r.todos = ids.length === 2 && ids.includes('duplicado');
+  // la papelera, junto a «Tus vídeos», con vídeos y sin ninguno
+  const conVideos = vistaGaleriaLight();
+  const boton = buscar(conVideos, n => n.tag === 'button' && texto(n) === 'Papelera');
+  r.papelera_con_videos = !!boton;
+  if (boton) boton.props.onclick();
+  APP.light.datos.videos = [];
+  const sinVideos = vistaGaleriaLight();
+  const otro = buscar(sinVideos, n => n.tag === 'button' && texto(n) === 'Papelera');
+  r.papelera_sin_videos = !!otro && texto(sinVideos).includes('Tus vídeos');
+  if (otro) otro.props.onclick();
+  r.abre_la_papelera = papeleras === 2;
+  // el desglose: se abre desde la pastilla del vídeo...
+  const pastilla = costeLightAhora();
+  let parado = false;
+  pastilla.props.onclick({ stopPropagation() { parado = true; } });
+  r.pastilla_abre = conmutados === 1 && parado
+    && !/modo editor/.test(pastilla.props.title || '');
+  // ...y dice lo del vídeo de la pantalla, no lo del proyecto de antes
+  APP.light.video.coste = { nombre: 'El de la pantalla', proyecto: 'L', eventos: 3,
+                            total_usd: 1 };
+  await pintarDesgloseCoste();
+  const caja = DOM['#coste-detalle'];
+  r.del_video = pedidas.includes('porPaso:L') && !pedidas.includes('porPaso:P')
+    && texto(caja).includes('El de la pantalla');
+  const limite = buscar(caja, n => n.tag === 'input');
+  const guardar = buscar(caja, n => n.tag === 'button' && texto(n) === 'Guardar');
+  if (limite && guardar) {
+    limite.value = '5';
+    await guardar.props.onclick();
+  }
+  r.presupuesto_del_video = pedidas.includes('presupuesto:L')
+    && APP.light.video.coste.presupuesto_usd === 5
+    && COSTE.datos.nombre === 'el proyecto de antes' && vivos > 0;
+  console.log(JSON.stringify(r));
+})();
+"""
+    r = _correr_node("prueba_galeria_y_desglose.js", guion)
+    if r is not None:
+        ok(r["todos"], "«Tus videos» enseña TODOS los videos, lleven la marca o no")
+        ok(r["papelera_con_videos"] and r["papelera_sin_videos"],
+           "la papelera tiene su boton junto a «Tus videos», tambien sin ninguno")
+        ok(r["abre_la_papelera"], "y el boton la abre")
+        ok(r["pastilla_abre"], "el desglose del coste se abre desde la pastilla del "
+                               "video, y ya no manda al modo editor")
+        ok(r["del_video"], "y enseña el gasto del video de la pantalla, no el del "
+                           "proyecto de las pestañas de antes")
+        ok(r["presupuesto_del_video"],
+           "y el presupuesto se guarda en ese video, y se ve en su pastilla")
+    css = io.open(os.path.join(RAIZ_ESTUDIO, "web", "estilo.css"), encoding="utf-8").read()
+    ok(not re.search(r"\.coste-light\s*\{[^}]*cursor:\s*default", css),
+       "la pastilla del coste lleva cursor de mano: ahora se abre")
+    ok(".ir-papelera" in css, "y el boton de la papelera tiene su sitio en la hoja")
+
+
+def probar_que_la_papelera_devuelve():
+    """Con un video en la papelera y ningun estilo, la papelera lo enseña.
+
+    EL FALLO, visto al abrirla desde su boton nuevo: la tabla de los estilos
+    apartados es `null` cuando no hay ninguno, y se colgaba igual --
+    `appendChild(null)` revienta--, asi que la papelera enseñaba el error en vez
+    del video y no habia forma de devolverlo. Y lo devuelto tiene que volver a
+    «Tus videos» sin recargar la pagina.
+
+    En node, con un DOM de mentira que revienta como el de verdad.
+    """
+    seccion("LA PAPELERA DEVUELVE LO APARTADO")
+    trozos = _trozos_de_app(
+        ("function abrirPapelera(", "/* Igual que con los proyectos: primero se pregunta"))
+    if trozos is None:
+        return
+    guion = r"""
+const DOC = {};
+function nodo(tag, props, hijos) {
+  const n = { tag, props: props || {}, hijos: hijos || [], dataset: {},
+    appendChild(x) {
+      if (!x || typeof x !== 'object') {
+        throw new TypeError("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
+      }
+      this.hijos.push(x); return x;
+    },
+    querySelectorAll() { return []; },
+    addEventListener(tipo, f) { this.props['on' + tipo] = f; },
+    remove() { if (this.props.id) delete DOC[this.props.id]; },
+  };
+  return n;
+}
+function h(tag, props, ...hijos) {
+  return nodo(tag, props, hijos.flat(4).filter(x => x !== null && x !== undefined && x !== false));
+}
+function vaciar(n) { n.hijos.length = 0; return n; }
+function texto(n) { return typeof n === 'string' ? n : ((n && n.hijos) || []).map(texto).join(' '); }
+function buscar(n, f) {
+  if (!n || typeof n !== 'object') return null;
+  if (f(n)) return n;
+  for (const x of n.hijos || []) { const r = buscar(x, f); if (r) return r; }
+  return null;
+}
+const document = {
+  getElementById(id) { return DOC[id] || null; },
+  body: { appendChild(n) { if (n.props.id) DOC[n.props.id] = n; return n; } },
+};
+const localStorage = { setItem() {} };
+let apartados = [{ carpeta: 'video_a__2026', id: 'video_a', nombre: 'Video apartado' }];
+const pedidas = [];
+const API = { presetsCanal: () => 'presetsCanal', papelera: () => 'papelera',
+              restaurar: c => `restaurar:${c}` };
+async function pedir(url) {
+  pedidas.push(url);
+  if (url === 'presetsCanal') return { papelera: [] };
+  if (url === 'papelera') return { papelera: apartados, raiz: 'X' };
+  if (url.startsWith('restaurar:')) { apartados = []; return { restaurado: 'video_a', proyecto: { nombre: 'Video apartado' } }; }
+  return {};
+}
+let galerias = 0, proyectos = 0;
+async function cargarProyectos() { proyectos += 1; }
+async function cargarGaleriaLight(forzar) { if (forzar) galerias += 1; }
+function listaDe(x) { return Array.isArray(x) ? x : []; }
+function oHueco(a, b) { return a || b || '—'; }
+function fechaCorta(x) { return String(x || ''); }
+function toast() {}
+function partirError(x) { return { titular: String(x) }; }
+function cajaError(m) { return h('div', { clase: 'caja-error' }, m); }
+function borrarMarcadas() {}
+const NOMBRES_PRESET = {};
+const PRESETS_CANAL = {};
+""" + trozos[0] + r"""
+(async () => {
+  const r = {};
+  abrirPapelera();
+  await new Promise(res => setTimeout(res, 30));
+  const capa = DOC['papelera'];
+  const t = texto(capa);
+  r.sin_error = !!capa && !/appendChild/.test(t);
+  r.ensena_el_video = t.includes('Video apartado');
+  const devolver = buscar(capa, n => n.tag === 'button' && texto(n) === 'Devolver');
+  r.tiene_devolver = !!devolver;
+  if (devolver) await devolver.props.onclick();
+  await new Promise(res => setTimeout(res, 30));
+  r.devuelto = pedidas.includes('restaurar:video_a__2026') && proyectos === 1;
+  r.vuelve_a_tus_videos = galerias === 1;
+  r.vacia = texto(DOC['papelera']).includes('vacía');
+  console.log(JSON.stringify(r));
+})();
+"""
+    r = _correr_node("prueba_papelera.js", guion)
+    if r is None:
+        return
+    ok(r["sin_error"], "con un video y ningun estilo apartado, la papelera no revienta")
+    ok(r["ensena_el_video"] and r["tiene_devolver"],
+       "enseña el video, con su boton de devolver")
+    ok(r["devuelto"], "devolver lo devuelve")
+    ok(r["vuelve_a_tus_videos"], "y vuelve a «Tus videos» sin recargar la pagina")
+    ok(r["vacia"], "y la papelera queda vacia")
+
+
+# ------------------------------------- los arreglos de octubre, con su prueba
+
+def probar_el_sonido_sin_claves(cliente, pid):
+    """Sin las claves de Jamendo y FreeSound, el MP4 sale sin musica o sin
+    efectos, que es lo que prometen la guia y el README.
+
+    EL FALLO: la tanda del MP4 los lanzaba sin mirar si habia clave, `sonido`
+    levantaba «falta la clave», y el fallo de un hilo corta la receta ANTES de
+    montar: sin esas dos claves no salia el MP4 nunca. Ahora sin su clave la
+    tarea cuenta como hecha, y si aun asi se corre (modo «todo») corre una que
+    lo dice y no sale a buscar nada.
+    """
+    seccion("SIN CLAVES DE MUSICA NI EFECTOS, EL MP4 SALE SIN ELLOS")
+    respuesta, claves = cliente.put("/api/claves", {"jamendo": {"clave": ""},
+                                                    "freesound": {"clave": ""}})
+    ok(not claves["jamendo"]["puesta"] and not claves["freesound"]["puesta"],
+       "el video de prueba se queda sin las dos claves del sonido")
+    respuesta, estado = cliente.get(f"/api/proyectos/{pid}/pestanas/render")
+    al_dia = {t["id"]: t["al_dia"] for t in estado.get("tareas") or []}
+    ok(al_dia.get("banda_sonora") is True and al_dia.get("efectos") is True,
+       f"sin su clave, la musica y los efectos cuentan como hechos: {al_dia}")
+    ok(not {"banda_sonora", "efectos"} & set(estado.get("pendientes") or []),
+       "y la pestaña no los da por pendientes")
+    respuesta, plan = cliente.get(f"/api/proyectos/{pid}/generar?tanda=render")
+    render = [f for f in plan.get("fases") or [] if f["pestana"] == "render"]
+    ok(render and not {"banda_sonora", "efectos"} & set(render[0]["pendientes"]),
+       "el plan de la tanda del MP4 no los cuenta entre lo que va a hacer")
+    # con la clave de FreeSound, los efectos vuelven a estar por hacer
+    cliente.put("/api/claves", {"freesound": {"clave": "fso-" + "z" * 12}})
+    respuesta, estado = cliente.get(f"/api/proyectos/{pid}/pestanas/render")
+    al_dia = {t["id"]: t["al_dia"] for t in estado.get("tareas") or []}
+    ok(al_dia.get("efectos") is False and al_dia.get("banda_sonora") is True,
+       f"con la clave de FreeSound los efectos vuelven a estar por hacer, y la "
+       f"musica sigue sin clave: {al_dia}")
+    cliente.put("/api/claves", {"freesound": {"clave": ""}})
+
+    # POR DENTRO: que se corre, en «todo» y en «pendientes», y que no sale a
+    # la red. Las dos tareas de verdad se sustituyen por unas que chivan.
+    servidor = _servicio()
+
+    class _Sonido:
+        PAPELES = ("golpe", "barrido")
+
+        def __init__(self, musica, efectos):
+            self._claves = (musica, efectos)
+
+        def hay_claves(self):
+            return self._claves
+
+    class _Estado:
+        def params(self, _paso):
+            return {}
+
+    class _Bitacora:
+        def anotar(self, *_a, **_k):
+            pass
+
+    class _Ctx:
+        id = "prueba_sonido"
+        estado = _Estado()
+        bitacora = _Bitacora()
+        proyecto = _CtxSinProyecto.proyecto()
+
+    salieron = []
+    guardados = (servidor._sonido, servidor._correr_banda,
+                 servidor._correr_surtir_efectos)
+    servidor._correr_banda = lambda *_a, **_k: salieron.append("musica") or {}
+    servidor._correr_surtir_efectos = lambda *_a, **_k: salieron.append("efectos") or {}
+    ctx = _Ctx()
+    try:
+        servidor._sonido = lambda: _Sonido(False, False)
+        for modo in ("todo", "pendientes"):
+            for tid in ("banda_sonora", "efectos"):
+                funcion, _args = servidor._que_hace(tid, ctx, {}, modo)
+                ok(funcion is servidor._tarea_sin_clave,
+                   f"sin clave, «{tid}» en modo {modo} corre la que lo dice, no "
+                   f"la que sale a buscar")
+        hecho = servidor._correr_receta(lambda *_a, **_k: None, ctx, "render",
+                                        {"nombre": "Todo", "tareas": {}},
+                                        ["banda_sonora", "efectos"], "todo")
+        igual(salieron, [], "la tanda del MP4 en modo «todo» no sale a buscar nada")
+        ok(len(hecho.get("tareas") or []) == 2
+           and all("sin clave" in t.get("resumen", "") for t in hecho["tareas"]),
+           f"y las dos dicen que van sin su clave: {hecho.get('tareas')}")
+        ok(servidor._esta_al_dia(ctx, {"id": "banda_sonora"})
+           and servidor._esta_al_dia(ctx, {"id": "efectos"}),
+           "y cuentan como al dia")
+        servidor._sonido = lambda: _Sonido(True, True)
+        funcion, _args = servidor._que_hace("banda_sonora", ctx, {}, "todo")
+        ok(funcion is servidor._correr_banda, "con la clave puesta, la musica se busca")
+        ok(not servidor._esta_al_dia(ctx, {"id": "efectos"}),
+           "y los efectos sin surtir vuelven a estar por hacer")
+    finally:
+        (servidor._sonido, servidor._correr_banda,
+         servidor._correr_surtir_efectos) = guardados
+
+
+def probar_que_montar_no_redibuja(cliente):
+    """La tanda del MP4 en modo «todo» vuelve a MONTAR, no a dibujar.
+
+    EL FALLO: «Regenerar Vídeo» lanza la tanda del MP4 en modo 'todo', y el modo
+    se aplicaba a las dos pestañas que recorre. En la de las imagenes, 'todo' es
+    rehacer la guia, el corte, la direccion, las hojas y todos los planos sin
+    cache: unos 4 $ en un video de cuatro minutos, con el boton diciendo que no
+    generaba ninguna imagen. Ahora la pestaña de imagenes corre en
+    «pendientes» y solo la del MP4 en «todo».
+    """
+    seccion("REGENERAR EL VIDEO VUELVE A MONTAR, NO A DIBUJAR")
+    servidor = _servicio()
+    igual(servidor._modo_de_la_pestana("video", "todo", {"tanda": "render"}),
+          "pendientes", "en la tanda del MP4, la pestaña de imagenes va en «pendientes»")
+    igual(servidor._modo_de_la_pestana("render", "todo", {"tanda": "render"}),
+          "todo", "y la del MP4, en «todo»: es la que se pidio rehacer")
+    igual(servidor._modo_de_la_pestana("video", "todo", {"tanda": "video"}),
+          "todo", "pedir las imagenes en «todo» sigue siendo rehacerlas")
+
+    corridas = []
+    guardados = (servidor._correr_receta, servidor._receta_de_video)
+    servidor._correr_receta = (lambda _avisar, _ctx, pestana, _receta, _puestas, modo,
+                               **_k: corridas.append((pestana, modo))
+                               or {"tareas": [], "saltadas": []})
+    servidor._receta_de_video = (lambda _ctx, pestana, _datos=None:
+                                 servidor._recetas().resolver(pestana, None, None))
+    plan = {"segundos": 10.0, "fases": [
+        {"pestana": "video", "desde": 0.0, "segundos": 5.0,
+         "pendientes": ["assets"], "tareas": [{"id": "assets"}]},
+        {"pestana": "render", "desde": 5.0, "segundos": 5.0,
+         "pendientes": ["render"], "tareas": [{"id": "render"}]}]}
+    try:
+        servidor._correr_cadena(lambda *_a, **_k: None, _CtxSinProyecto(),
+                                ["video", "render"], "todo", {"tanda": "render"}, plan)
+    finally:
+        servidor._correr_receta, servidor._receta_de_video = guardados
+    igual(corridas, [("video", "pendientes"), ("render", "todo")],
+          "y la tanda CORRE asi, no solo lo planifica")
+
+    # Y LO QUE SE ENSEÑA ANTES DE PULSAR dice lo mismo: un video con la guia de
+    # estilo ya escrita no la rehace por pedir el MP4 en «todo»
+    respuesta, datos = cliente.post("/api/proyectos", {"nombre": "Prueba montar todo"})
+    vid = (datos.get("proyecto") or {}).get("id") or ""
+    sembrar(os.path.join(cliente.carpeta, vid))
+    respuesta, assets = cliente.get(f"/api/proyectos/{vid}/pasos/assets")
+    estilo = dict((assets.get("params") or {}).get("estilo") or {})
+    estilo["guia"] = {"guia": "una guia de estilo escrita para la prueba"}
+    cliente.put(f"/api/proyectos/{vid}/pasos/assets/params", {"params": {"estilo": estilo}})
+    respuesta, plan = cliente.get(f"/api/proyectos/{vid}/generar?tanda=render&modo=todo")
+    igual(plan.get("modo"), "todo", "el plan dice el modo que se pidio")
+    fases = {f["pestana"]: f for f in plan.get("fases") or []}
+    imagenes = (fases.get("video") or {}).get("tareas") or []
+    montaje = (fases.get("render") or {}).get("tareas") or []
+    ok(imagenes and all(t["se_hace"] == (not t["al_dia"]) for t in imagenes),
+       "en la pestaña de imagenes se hace solo lo que no esta al dia")
+    ok(any(t["id"] == "guia_estilo" and t["al_dia"] and not t["se_hace"]
+           for t in imagenes),
+       "y la guia de estilo ya escrita no se vuelve a pagar")
+    ok(montaje and all(t["se_hace"] for t in montaje),
+       "la del MP4 se hace entera: es volver a montar")
+    cliente.delete(f"/api/proyectos/{vid}")
+
+
+def probar_que_corregir_el_estilo_conserva_sus_imagenes():
+    """Corregir el estilo con las indicaciones ya no da un 400.
+
+    EL FALLO: la pantalla manda la lista de imagenes VACIA cuando solo se ha
+    reescrito el texto, y el servidor pisaba las del estilo con ella: el origen
+    se quedaba sin ninguna, `validar_encargo` contestaba «falta el estilo
+    grafico» y la unica caja que hay para corregir el estilo daba un 400.
+
+    Por dentro: el reparto de la frase llama al CLI y el trabajo dibuja, asi que
+    los dos van sustituidos por unos que apuntan lo que les piden.
+    """
+    seccion("CORREGIR EL ESTILO CON UNA FRASE CONSERVA SUS IMAGENES")
+    servidor = _servicio()
+    if servidor.PASOS_MODULOS is None:
+        ok(False, f"los pasos no cargan: {servidor.ERROR_PASOS}")
+        return
+    carpeta = tempfile.mkdtemp(prefix="prueba_estilo_")
+    ficha = {"id": "prueba_estilo", "tipo": "canal", "nombre": "Canal de prueba",
+             "datos": {"guion": {"idiomas_salida": ["es"]},
+                       "origen": {"estilo_imagenes": ["una.png", "dos.png"],
+                                  "estilo_prompt": "dibujo plano de linea gruesa",
+                                  "tono_prompt": "serio pero cercano, sin dramatismo",
+                                  "voz_prompt": "grave, pausada, sin sonar a locutor",
+                                  "taller": "taller_prueba_estilo"}}}
+    lanzados, repartidas = [], []
+
+    class _Presets:
+        ErrorPreset = ValueError
+
+        def leer(self, _pid):
+            return copy.deepcopy(ficha)
+
+        def idioma_de(self, _ficha):
+            return "es"
+
+    class _Enrutar:
+        def repartir(self, frase, **_k):
+            repartidas.append(frase)
+            return {"tareas": ("guia",), "params": {}, "laminas": {},
+                    "resumen": "se reescribe la guia"}
+
+    class _Gestor:
+        def lanzar(self, nombre, _funcion, *args, **kwargs):
+            lanzados.append({"nombre": nombre, "args": args, "kwargs": kwargs})
+            return "t_estilo"
+
+        def estado(self, tid):
+            return {"id": tid, "estado": "pendiente", "progreso": 0.0}
+
+    class _Bitacora:
+        def anotar(self, *_a, **_k):
+            pass
+
+    class _Proyecto:
+        raiz = carpeta
+
+    class _Ctx:
+        id = "taller_prueba_estilo"
+        gestor = _Gestor()
+        bitacora = _Bitacora()
+        proyecto = _Proyecto()
+
+    guardados = (servidor._presets, servidor._taller_de, servidor._enrutar_estilo,
+                 servidor._estado_del_estilo)
+    servidor._presets = _Presets
+    servidor._taller_de = lambda _ficha: _Ctx()
+    servidor._enrutar_estilo = _Enrutar
+    servidor._estado_del_estilo = lambda _ctx: {}
+    try:
+        try:
+            respuesta = servidor.regenerar_preset_light("prueba_estilo", {
+                "parte": "estilo", "peticion": "",
+                "origen": {"estilo_imagenes": [], "estilo_prompt": "igual pero más frío"}})
+        except servidor.ErrorApi as fallo:
+            ok(False, f"corregir el estilo solo con las indicaciones da "
+                      f"{fallo.codigo}: {fallo.mensaje}")
+            return
+        ok(True, "corregir el estilo solo con las indicaciones ya no da 400")
+        encargo = (lanzados[0]["args"][1] if lanzados else {}) or {}
+        igual(encargo.get("estilo_imagenes"), ["una.png", "dos.png"],
+              "el origen conserva sus imagenes: una lista vacia no las quita")
+        igual(encargo.get("estilo_prompt"), "igual pero más frío",
+              "y las indicaciones nuevas entran")
+        igual(respuesta.get("material_nuevo"), False,
+              "sin imagenes nuevas no se rehace el material, solo lo que cuelga "
+              "de las indicaciones")
+        igual(repartidas, ["igual pero más frío"],
+              "que es lo que se reparte")
+        # con imagenes nuevas, el material SI cambia
+        del lanzados[:]
+        try:
+            respuesta = servidor.regenerar_preset_light("prueba_estilo", {
+                "parte": "estilo", "peticion": "",
+                "origen": {"estilo_imagenes": ["tres.png"],
+                           "estilo_prompt": "fotográfico, con luz natural y sin filtros"}})
+        except servidor.ErrorApi as fallo:
+            ok(False, f"con imagenes nuevas da {fallo.codigo}: {fallo.mensaje}")
+            return
+        encargo = (lanzados[0]["args"][1] if lanzados else {}) or {}
+        igual((respuesta.get("material_nuevo"), encargo.get("estilo_imagenes")),
+              (True, ["tres.png"]), "y con imagenes nuevas, si: se rehace con ellas")
+    finally:
+        (servidor._presets, servidor._taller_de, servidor._enrutar_estilo,
+         servidor._estado_del_estilo) = guardados
+        shutil.rmtree(carpeta, ignore_errors=True)
+
+
+def _taller(cliente, nombre, imagenes=(), encargo=None, lanzado=None):
+    """Un taller de estilo a medias, como lo deja una generacion que falla.
+
+    Se crea en el disco y NO por la API: el servidor guarda la configuracion de
+    un proyecto al abrirlo por primera vez, y la marca de taller escrita despues
+    no la veria nunca.
+    """
+    from nucleo.proyecto import Proyecto                      # noqa: PLC0415
+    proyecto = Proyecto.crear(cliente.carpeta, nombre)
+    proyecto.config["taller_de_preset"] = True
+    if encargo:
+        proyecto.config["encargo_light"] = encargo
+    proyecto.guardar_config()
+    tid, raiz = proyecto.id, proyecto.raiz
+    if imagenes:
+        aportadas = os.path.join(raiz, "estilo", "aportadas")
+        os.makedirs(aportadas, exist_ok=True)
+        for nombre_imagen in imagenes:
+            with open(os.path.join(aportadas, nombre_imagen), "wb") as fh:
+                fh.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    if lanzado:
+        with open(os.path.join(raiz, "bitacora.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"evento": "preset_light_lanzado", "paso": None,
+                                 "datos": lanzado}) + "\n")
+    return tid
+
+
+def probar_retomar_un_estilo_a_medias(cliente):
+    """Retomar un estilo a medias no obliga a escribirlo todo otra vez.
+
+    EL FALLO: el encargo vivia solo en el navegador, asi que despues de recargar
+    «Retomar» abria el formulario vacio, y comprobar el plan sin volver a subir
+    las imagenes contestaba «falta el estilo grafico» aunque el taller tuviera
+    las suyas. Y retomar con el tono reescrito se saltaba el tono: se habia
+    hecho, pero con el texto de antes.
+    """
+    seccion("RETOMAR UN ESTILO A MEDIAS")
+    base = {"nombre": "Canal retomado", "idioma": "es",
+            "estilo_prompt": "dibujo plano de linea gruesa",
+            "tono_prompt": "serio pero cercano, sin dramatismo",
+            "voz_prompt": "grave, pausada, sin sonar a locutor"}
+    con_imagenes = _taller(cliente, "taller retomar con imagenes",
+                           imagenes=("una.png", "dos.png"),
+                           encargo=dict(base, ritmo="medio"))
+    sin_imagenes = _taller(cliente, "taller retomar sin imagenes")
+    viejo = _taller(cliente, "taller retomar de antes", imagenes=("vieja.png",),
+                    lanzado={"nombre": "Canal de antes", "idioma": "en",
+                             "ritmo": "rapido"})
+
+    respuesta, datos = cliente.post("/api/presets-light/plan", base)
+    igual(respuesta.status_code, 400, "sin imagenes y sin taller, falta el estilo grafico")
+    respuesta, datos = cliente.post("/api/presets-light/plan",
+                                    dict(base, taller=con_imagenes))
+    igual(respuesta.status_code, 200,
+          f"con el taller delante valen sus imagenes: no hay que volver a subirlas "
+          f"({(datos or {}).get('error')})")
+    igual(sorted(((datos or {}).get("encargo") or {}).get("estilo_imagenes") or []),
+          ["dos.png", "una.png"], "y son las del taller")
+    respuesta, datos = cliente.post("/api/presets-light/plan",
+                                    dict(base, taller=sin_imagenes))
+    igual(respuesta.status_code, 400, "un taller sin imagenes no se las inventa")
+
+    respuesta, galeria = cliente.get("/api/presets-light")
+    sueltos = {s.get("id"): s for s in (galeria or {}).get("sueltos") or []}
+    suelto = sueltos.get(con_imagenes) or {}
+    igual(((suelto.get("encargo") or {}).get("tono_prompt"), suelto.get("imagenes")),
+          (base["tono_prompt"], 2),
+          "el intento a medias trae su encargo y cuantas imagenes tiene: "
+          "«Retomar» vuelve con el formulario relleno")
+    recuperado = (sueltos.get(viejo) or {}).get("encargo") or {}
+    igual((recuperado.get("nombre"), recuperado.get("idioma"), recuperado.get("ritmo")),
+          ("Canal de antes", "en", "rapido"),
+          "y uno de antes, que no lo guardaba, lo recupera de su bitacora")
+
+    servidor = _servicio()
+    cambiadas = servidor._partes_cambiadas
+    igual(cambiadas(None, base, False), set(), "sin encargo guardado no se rehace nada")
+    igual(cambiadas(base, dict(base), False), set(),
+          "retomar con lo mismo se salta lo que ya salio bien")
+    igual(cambiadas(base, dict(base, tono_prompt="mas cercano y con humor"), False),
+          {"tono"}, "con el tono reescrito, el tono se rehace")
+    igual(cambiadas(base, dict(base, estilo_prompt="mas frio"), False), {"estilo"},
+          "con las indicaciones del estilo cambiadas, el estilo")
+    igual(cambiadas(base, dict(base), True), {"estilo"},
+          "con imagenes nuevas, el estilo tambien")
+    igual(cambiadas(base, dict(base, idioma="en"), False), {"voz"},
+          "y con otro idioma, la voz")
+    for tid in (con_imagenes, sin_imagenes, viejo):
+        cliente.delete(f"/api/presets-light/talleres/{tid}")
+
+
+def probar_el_video_nuevo_trae_lo_suyo(cliente):
+    """Un video nuevo nace con la calidad de Configuracion y con SU copia de las
+    laminas del estilo.
+
+    LOS DOS FALLOS: el video que nace de un estilo no pasaba por donde se
+    escribe la calidad al crear, asi que todos salian en la del paso dijera lo
+    que dijera Configuracion. Y sus referencias de estilo apuntaban a la carpeta
+    del ESTILO: si el estilo se borraba --o, antes, si se volvia a guardar-- el
+    video se quedaba sin referencias y no podia dibujar ni corregir un plano.
+    """
+    seccion("UN VIDEO NUEVO TRAE SU CALIDAD Y SU COPIA DE LAS LAMINAS")
+    respuesta, ajustes = cliente.get("/api/ajustes")
+    antes = ((ajustes or {}).get("ajustes") or {}).get("calidad_imagen") or "low"
+    cliente.put("/api/ajustes", {"calidad_imagen": "medium"})
+    carpeta = os.path.join(cliente.carpeta, "laminas_de_prueba")
+    os.makedirs(carpeta, exist_ok=True)
+    laminas = []
+    for indice in range(3):
+        ruta = os.path.join(carpeta, f"lamina{indice}.png")
+        with open(ruta, "wb") as fh:
+            fh.write(b"\x89PNG\r\n\x1a\n" + bytes([indice]) * 32)
+        laminas.append(ruta)
+    respuesta, datos = cliente.post("/api/presets-canal", {
+        "tipo": "canal", "nombre": "Estilo con laminas",
+        "datos": {"guion": {"idiomas_salida": ["es"]},
+                  "voz": {"voz_id": "v-de-prueba", "idioma": "es"},
+                  "estilo": {"referencias": laminas},
+                  "origen": {"tono_prompt": "serio", "estilo_prompt": "plano"}}})
+    estilo_id = ((datos or {}).get("preset") or {}).get("id") or ""
+    if not ok(bool(estilo_id), f"hay un estilo con laminas ({(datos or {}).get('error')})"):
+        cliente.put("/api/ajustes", {"calidad_imagen": antes})
+        return
+    respuesta, creado = cliente.post(f"/api/presets-light/{estilo_id}/video", {
+        "nombre": "Video con laminas", "duracion_objetivo_s": 120,
+        "material": "Lo que se cuenta en este video de prueba."})
+    igual(respuesta.status_code, 201, f"el video se crea ({(creado or {}).get('error')})")
+    vid = ((creado or {}).get("proyecto") or {}).get("id") or ""
+    respuesta, assets = cliente.get(f"/api/proyectos/{vid}/pasos/assets")
+    params = (assets or {}).get("params") or {}
+    igual(params.get("calidad"), "medium",
+          "nace con la calidad de Configuracion, no con la del paso")
+    referencias = (params.get("estilo") or {}).get("referencias") or []
+    propia = os.path.normcase(os.path.join(cliente.carpeta, vid, "estilo", "referencias"))
+    igual(len(referencias), 3, "con sus tres laminas")
+    ok(referencias and all(os.path.normcase(os.path.dirname(r)) == propia
+                           and os.path.isfile(r) for r in referencias),
+       f"y son COPIAS dentro del propio video: {referencias}")
+    cliente.delete(f"/api/proyectos/{vid}")
+    cliente.delete(f"/api/presets-light/{estilo_id}")
+    cliente.put("/api/ajustes", {"calidad_imagen": antes})
+
+
+def probar_cero_cartelas_tambien_es_decidir():
+    """Decidir que NINGUN plano es cartela tambien cuenta como hecho.
+
+    EL FALLO: el plan de cartelas se daba por hecho si algun plano llevaba una,
+    asi que en un video en el que no salia ninguna --una respuesta valida-- cada
+    tanda volvia a pedirlas: minutos de CLI cada vez, y si en una de esas salia
+    alguna, cambiaba un video ya revisado. Ahora se apunta para que guion se
+    decidio, y un guion nuevo vuelve a pedirlas.
+    """
+    seccion("CERO CARTELAS TAMBIEN ES UNA DECISION")
+    servidor = _servicio()
+    if servidor.PASOS_MODULOS is None:
+        ok(False, f"los pasos no cargan: {servidor.ERROR_PASOS}")
+        return
+    from nucleo.proyecto import escribir_json                 # noqa: PLC0415
+    carpeta = tempfile.mkdtemp(prefix="prueba_cartelas_")
+    tarea = {"id": "plan_cartelas"}
+    try:
+        with _proyectos_en(servidor, carpeta):
+            ctx = _contexto_sembrado(servidor, carpeta, "Cero cartelas")
+            ok(not servidor._esta_al_dia(ctx, tarea),
+               "sin decidir nada, las cartelas estan por decidir")
+            firma = servidor._firma_del_guion(ctx)
+            ok(bool(firma), "el guion tiene su huella")
+            # lo que deja `_correr_plan_cartelas` cuando no sale ninguna
+            ctx.proyecto.config[servidor.CONFIG_CARTELAS_DECIDIDAS] = firma
+            ctx.proyecto.guardar_config()
+            ok(servidor._esta_al_dia(ctx, tarea),
+               "decididas cero cartelas para este guion, la tarea esta al dia")
+            otro = [dict(b) for b in BLOQUES]
+            otro[0]["texto"] = "Un primer bloque distinto: el guion ha cambiado."
+            escribir_json(os.path.join(ctx.proyecto.ruta_trabajo("guion"), "guion.json"),
+                          {"titulo": "Guion cambiado", "guion": otro})
+            ctx.estado.completar("guion", {"guion": "guion.json",
+                                           "n_bloques": len(otro), "resumen": "otro"})
+            ok(not servidor._esta_al_dia(ctx, tarea),
+               "con otro guion, las cartelas vuelven a estar por decidir")
+    finally:
+        shutil.rmtree(carpeta, ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Prueba del servicio HTTP")
     parser.add_argument("--conservar", action="store_true",
@@ -3396,6 +5137,10 @@ def main():
     argumentos = parser.parse_args()
 
     carpeta = tempfile.mkdtemp(prefix="estudio_api_")
+    # aparte de la del servidor: esa es su carpeta de proyectos, y lo que se
+    # deja en ella sale en la lista de videos
+    en_proceso = tempfile.mkdtemp(prefix="estudio_api_proceso_")
+    aislar_este_proceso(en_proceso)
     puerto = puerto_libre()
     print(f"PRUEBA DE LA API DEL ESTUDIO\n  puerto {puerto}\n  proyectos en {carpeta}")
     proceso, base = arrancar(puerto, carpeta)
@@ -3450,10 +5195,28 @@ def main():
         probar_que_no_falta_ningun_nombre_en_la_pantalla()
         probar_que_no_falta_ningun_nombre_en_el_servidor()
         probar_el_reloj_de_un_trabajo()
+        # cada video con su barra y su cola, un montaje a la vez, regrabar un
+        # tramo, el precio del boton y las puertas de la pantalla
+        probar_regrabar_un_tramo(cliente)
+        probar_la_galeria_y_el_desglose(cliente, pid)
+        probar_que_la_papelera_devuelve()
+        probar_un_montaje_a_la_vez()
+        probar_que_cada_video_tiene_su_barra()
+        probar_que_el_mp4_suelto_tiene_barra()
+        probar_que_un_plano_con_nota_no_cuenta_como_hecho()
+        probar_que_la_voz_regrabada_queda_al_dia()
+        # los arreglos de octubre (1)
+        probar_el_sonido_sin_claves(cliente, pid)
+        probar_que_montar_no_redibuja(cliente)
+        probar_que_corregir_el_estilo_conserva_sus_imagenes()
+        probar_retomar_un_estilo_a_medias(cliente)
+        probar_el_video_nuevo_trae_lo_suyo(cliente)
+        probar_cero_cartelas_tambien_es_decidir()
     finally:
         parar(proceso)
         if not argumentos.conservar:
             shutil.rmtree(carpeta, ignore_errors=True)
+            shutil.rmtree(en_proceso, ignore_errors=True)
 
     print()
     if _fallos:

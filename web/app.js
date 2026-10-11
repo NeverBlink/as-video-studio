@@ -879,21 +879,43 @@ function limpiarError(paso) {
 function arranqueDe(antes, tid) {
   const previo = (antes || {}).inicio;
   if (!previo) return Date.now();
-  const suyo = (antes || {}).id;
-  const esDeEste = suyo === tid || suyo === null || suyo === undefined;
-  return esDeEste ? previo : Date.now();
+  return delMismoTrabajo(antes, tid) ? previo : Date.now();
 }
 
+/* Si lo que ya ocupa la ranura es ESTE trabajo (o la espera de su clic, que
+   todavía no tiene id). Ver `arranqueDe`.
+
+   Y DE UN TRABAJO DE OTRO NO SE HEREDA NADA, por lo mismo que el reloj. La
+   ranura del vídeo es una y la ocupan un trabajo detrás de otro, y el nuevo se
+   quedaba las MUESTRAS de avance del anterior: con la última en el 100 %,
+   `anotarAvance` no apuntaba ninguna del nuevo --solo apunta si se avanza-- y
+   la cuenta atrás de un montaje por su propio ritmo (`restanteTandaLight`) no
+   salía nunca. Se quedaba también su progreso y su «Listo», que se veían un
+   instante en la barra recién pulsada. */
+function delMismoTrabajo(antes, tid) {
+  const suyo = (antes || {}).id;
+  return suyo === tid || suyo === null || suyo === undefined;
+}
+
+/* DE QUÉ VÍDEO ES lo que ocupa la ranura del vídeo, que es UNA para todos: sin
+   apuntarlo, la barra de uno se quedaba puesta al abrir otro --el segundo
+   enseñaba «Montando el vídeo» del primero, sin reproductor, con «Generar
+   imágenes» apagado y un «Parar» que habría parado el otro--. Con el vídeo
+   apuntado, abrir otro aparca la tarea (`aparcarTrabajoLight`). */
 function seguirTrabajo(paso, tid, alTerminar, alAvanzar) {
   soltarSeguimiento(paso);
   const seguimiento = {};
   APP.seguimientos[paso] = seguimiento;
+  const antes = delMismoTrabajo(APP.trabajos[paso], tid) ? APP.trabajos[paso] : null;
   APP.trabajos[paso] = Object.assign({
     id: tid, estado: 'ejecutando', progreso: 0, mensaje: 'lanzando…',
-  }, APP.trabajos[paso], {
+  }, antes, {
     id: tid, estado: 'ejecutando',
     inicio: arranqueDe(APP.trabajos[paso], tid),
   });
+  if (paso === CLAVE_VIDEO_LIGHT) {
+    APP.trabajos[paso].pid = (APP.light.video || {}).pid || '';
+  }
   pintarTrabajo(paso);
 
   seguimiento.tic = setInterval(() => pintarTrabajo(paso), 500);
@@ -1316,21 +1338,27 @@ async function abrirProyecto(pid) {
   // la ranura elegida es de ESTE panel: en otro proyecto no significa nada
   Object.keys(RANURAS).forEach(paso => delete RANURAS[paso]);
   CACHE_ARCHIVOS.clear();
-  Object.keys(APP.seguimientos).forEach(soltarSeguimiento);
-  APP.trabajos = {};
+  /* LO QUE SIGUE LA PANTALLA DE LOS VÍDEOS NO ES DE ESTE PROYECTO. `APP.pid` es
+     el de las pestañas de antes y no el vídeo que se está mirando, y esto se
+     llama, por ejemplo, al devolver algo desde la papelera: soltarlo todo le
+     quitaba la barra al vídeo que estuviera generando (y a un estilo a medio
+     crear), y la cola de imágenes de ese vídeo se quedaba esperando un final
+     que ya no iba a oír nadie. Las colas son de cada vídeo (ver COLAS) y aquí
+     no se vacían. */
+  const deLaPantalla = [CLAVE_VIDEO_LIGHT, CLAVE_LIGHT, CLAVE_VOZ_LIGHT];
+  Object.keys(APP.seguimientos).filter(p => !deLaPantalla.includes(p))
+    .forEach(soltarSeguimiento);
+  APP.trabajos = Object.fromEntries(Object.entries(APP.trabajos)
+    .filter(([p]) => deLaPantalla.includes(p)));
   COSTE.datos = null;
   COSTE.ultima = 0;
   olvidarTandas();
   TANDA_EN_MARCHA.tanda = '';
   TANDA_EN_MARCHA.pestana = '';
-  // las diapositivas y la cola de imagenes son de ESTE video: una nota en cola
-  // de otro proyecto se dibujaria aqui
+  // las diapositivas se vuelven a pedir al enseñarse
   pararPrevia();
   PREVIA.ficha = null;
   PREVIA.i = 0;
-  COLA_IMG.espera = [];
-  COLA_IMG.corriendo = [];
-  COLA_IMG.fallo = {};
   pintarCoste();
   await refrescarTodo();
   await cargarBitacora();
@@ -1406,27 +1434,33 @@ function retomarColaDeImagenes(t) {
   const suyas = (t.unidades || []).filter(u => String(u).startsWith('escena:'));
   if (t.paso !== 'assets' || !suyas.length
       || suyas.length !== (t.unidades || []).length) return false;
-  if (APP.seguimientos[CLAVE_VIDEO_LIGHT]) return true;   // ya se sigue
-  // sin nota: de un trabajo vivo solo se sabe que planos lleva
-  COLA_IMG.corriendo = suyas.map(u => ({ sid: String(u).slice('escena:'.length), nid: '' }));
-  APP.trabajos[CLAVE_VIDEO_LIGHT] = Object.assign({}, t,
-    { inicio: Date.now() - (t.segundos || 0) * 1000 });
-  seguirTrabajo(CLAVE_VIDEO_LIGHT, t.id, async trabajo => {
-    const tanda = COLA_IMG.corriendo.slice();
-    /* AQUI NO SE MARCA NADA COMO HECHO. Al retomar tras una recarga solo se
-       sabe QUE PLANOS lleva el trabajo, no de que nota salieron, y el visto es
-       de la nota. Lo pone `refrescarLoDibujado` al releer el repaso: el
-       servidor ya guardo el `regenerado` de cada una. */
-    if (trabajo.estado === 'error') {
-      tanda.forEach(sid => { COLA_IMG.fallo[sid] = trabajo.error || 'fallo'; });
-    }
-    if (trabajo.estado !== 'ejecutando') {
-      COLA_IMG.corriendo = [];
-      await refrescarLoDibujado();
-      repintarVideo();
-      soltarCola();
-    }
-  }, () => repintarVideo());
+  /* LA COLA DE SU VÍDEO. Si esta pestaña ya la llevaba (se dejó al abrir otro
+     vídeo y ha seguido de fondo) se queda con su tanda y sus notas, que es lo
+     que permite marcarlas como regeneradas al acabar. */
+  const cola = colaDe(t.proyecto || (APP.light.video || {}).pid);
+  if (cola.tid !== t.id) {
+    /* Sin nota: de un trabajo vivo que no lanzó esta pestaña solo se sabe QUÉ
+       PLANOS lleva. AQUÍ NO SE MARCA NADA COMO HECHO: el visto es de la nota, y
+       sin saber de cuál salió cada plano no hay qué marcar. Lo pone
+       `refrescarLoDibujado` al releer el repaso. */
+    cola.tid = t.id;
+    cola.tanda = suyas.map(u => ({ sid: String(u).slice('escena:'.length), nid: '', texto: '' }));
+    cola.corriendo = cola.tanda.map(x => ({ sid: x.sid, nid: '' }));
+  }
+  /* LA BARRA, SOLO SI ES DEL VÍDEO QUE SE ESTÁ MIRANDO. Esto lo llama también
+     el reenganche de las pestañas de antes (`reengancharTrabajos`), que mira
+     `APP.pid` y no el vídeo abierto: ocupando la ranura con la regeneración de
+     otro vídeo, el que se miraba heredaba su barra y un «Parar» que paraba el
+     otro. Fuera de la barra se sigue igual, de fondo: al acabar hay que marcar
+     sus notas y soltar su cola. */
+  if (esElVideoAbierto(cola.pid) && !APP.seguimientos[CLAVE_VIDEO_LIGHT]) {
+    APP.trabajos[CLAVE_VIDEO_LIGHT] = Object.assign({}, t,
+      { inicio: Date.now() - (t.segundos || 0) * 1000 });
+    seguirTandaDeCola(cola);
+    return true;
+  }
+  if ((APP.trabajos[CLAVE_VIDEO_LIGHT] || {}).id === t.id) return true;   // ya se sigue
+  seguirDeFondo(cola.tid, trabajo => terminarTandaDeCola(cola, cola.tanda, trabajo));
   return true;
 }
 
@@ -3805,7 +3839,12 @@ function seccionTarifaTTS(datos) {
 
 async function pintarDesgloseCoste() {
   const caja = $('#coste-detalle');
-  const datos = COSTE.datos;
+  /* EL DEL VÍDEO DE LA PANTALLA, y solo si no hay ninguno el de `APP.pid`.
+     Leía siempre `APP.pid` --el proyecto de las pestañas de antes, que no es
+     el vídeo que se mira-- y desde la pastilla del vídeo enseñaba el gasto de
+     otro proyecto con el nombre de otro proyecto. */
+  const pid = APP.light.video.pid || APP.pid;
+  const datos = APP.light.video.pid ? APP.light.video.coste : COSTE.datos;
   if (!datos) {
     vaciar(caja).appendChild(h('div', { clase: 'vacio' },
       'todavía no se ha podido leer el coste de este vídeo'));
@@ -3814,7 +3853,7 @@ async function pintarDesgloseCoste() {
   vaciar(caja);
   caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo el desglose…'));
   let porPaso = null;
-  try { porPaso = await pedir(API.costePorPaso(APP.pid)); }
+  try { porPaso = await pedir(API.costePorPaso(pid)); }
   catch (e) { porPaso = null; }
   if (!COSTE.abierto) return;
   vaciar(caja);
@@ -3871,9 +3910,13 @@ async function pintarDesgloseCoste() {
         onclick: async () => {
           const valor = limite.value.trim() === '' ? null : Number(limite.value);
           try {
-            COSTE.datos = await pedir(API.costePresupuesto(APP.pid), {
+            const nuevo = await pedir(API.costePresupuesto(pid), {
               method: 'PUT', cuerpo: { usd: valor },
             });
+            if (APP.light.video.pid === pid) {
+              APP.light.video.coste = nuevo;
+              refrescarVivosLight();
+            } else COSTE.datos = nuevo;
             pintarCoste();
             pintarDesgloseCoste();
             toast(valor === null ? 'presupuesto quitado' : `presupuesto fijado en ${valor} $`);
@@ -4353,6 +4396,9 @@ function abrirPapelera() {
                 toast(`«${(salida.proyecto || {}).nombre || pid}» devuelto a la lista`);
                 if (pid) localStorage.setItem('estudio.pid', pid);
                 await cargarProyectos();
+                // y a «Tus vídeos», que es una copia de la lista: sin esto
+                // lo devuelto no salía hasta recargar la página
+                await cargarGaleriaLight(true);
                 await pintar();
               } catch (e) { toast(partirError(e.message).titular, true); }
             },
@@ -4382,7 +4428,12 @@ function abrirPapelera() {
         + 'todo lo que se pagó por generar. El servidor dice cuántos ficheros y cuántos megas '
         + 'son antes de tocar nada.'));
 
-      cuerpo.appendChild(tablaPresetsPapelera(presetsApartados, pintar));
+      /* SOLO SI HAY ESTILOS APARTADOS. Sin ninguno la tabla es `null`, y
+         `appendChild(null)` revienta: con un vídeo en la papelera y ningún
+         estilo, la papelera enseñaba el error en vez del vídeo, y no había
+         forma de devolverlo. */
+      const presets = tablaPresetsPapelera(presetsApartados, pintar);
+      if (presets) cuerpo.appendChild(presets);
     } catch (e) {
       vaciar(cuerpo).appendChild(cajaError(e.message));
     }
@@ -4413,6 +4464,8 @@ function tablaPresetsPapelera(lista, alTerminar) {
               const salida = await pedir(API.presetCanalRestaurar(ficha.id), { method: 'POST' });
               PRESETS_CANAL.datos = salida;
               toast(`«${ficha.nombre}» devuelto a la lista`);
+              // y a la galería de estilos, por lo mismo que los vídeos
+              await cargarGaleriaLight(true);
               await alTerminar();
             } catch (e) { toast(partirError(e.message).titular, true); }
           },
@@ -4810,13 +4863,19 @@ async function cargarGaleriaLight(forzar) {
   pintarLight();
   try {
     APP.light.datos = await pedir(API.presetsLight());
-    // Y los vídeos hechos con este modo, que viven en la lista de proyectos de
-    // siempre: son proyectos normales, así que no hay un almacén aparte que
-    // pudiera desincronizarse con el de verdad.
+    // Y los vídeos, que viven en la lista de proyectos de siempre: son
+    // proyectos normales, así que no hay un almacén aparte que pudiera
+    // desincronizarse con el de verdad.
+    //
+    // TODOS, y no solo los que llevan la marca `video_light`. Esa marca la
+    // pone crear el vídeo desde un estilo y nada más: un vídeo DUPLICADO, uno
+    // creado por la API o uno de antes de esta pantalla no la llevan, y con el
+    // filtro no había ningún camino hasta ellos. Los talleres de estilo
+    // (`taller_de_preset`) no son vídeos y no llegan: los quita el servidor de
+    // la lista (`listar_proyectos`).
     try {
       const proyectos = await pedir(API.proyectos());
       APP.light.datos.videos = (proyectos.proyectos || [])
-        .filter(p => p.video_light)
         .sort((a, b) => String(b.actualizado || '').localeCompare(String(a.actualizado || '')));
     } catch (e) { APP.light.datos.videos = []; }
     // el ritmo de fábrica lo dice el servidor, no esta pantalla
@@ -5270,10 +5329,21 @@ function vistaGaleriaLight() {
      generar no tenía desde dónde retomarse: seguía corriendo en el servidor y
      no había ningún camino hasta él. */
   const videos = videosLight();
+  /* LA PAPELERA SE ABRE DESDE AQUÍ, y también sin ningún vídeo: es justo
+     cuando más se busca, después de apartar el último. Los avisos de «Apartar»
+     y «Descartar» mandan a recuperarlo de ella, y solo se abría desde el menú
+     del proyecto de la barra de arriba, que en esta pantalla está escondido. */
+  caja.appendChild(h('div', { clase: 'light-cab' },
+    h('h2', {}, 'Tus vídeos'),
+    h('span', { clase: 'meta' }, videos.length
+      ? `${videos.length} vídeo${videos.length === 1 ? '' : 's'}`
+      : 'todavía ninguno'),
+    h('button', {
+      clase: 'mini fantasma ir-papelera',
+      title: 'Los vídeos y estilos que has apartado: se devuelven desde aquí',
+      onclick: () => abrirPapelera(),
+    }, 'Papelera')));
   if (videos.length) {
-    caja.appendChild(h('div', { clase: 'light-cab' },
-      h('h2', {}, 'Tus vídeos'),
-      h('span', { clase: 'meta' }, `${videos.length} con este modo`)));
     const lista = h('div', { clase: 'videos-light' });
     videos.forEach(video => lista.appendChild(h('div', { clase: 'video-light' },
       h('button', {
@@ -5381,9 +5451,9 @@ function tarjetaNuevoEstilo(cuantos) {
       h('div', { clase: 'pista' }, 'unas imágenes y cómo suena')));
 }
 
-/* Los vídeos hechos con este modo, del más reciente al más antiguo. Los sirve
-   `GET /api/proyectos` con su marca (`video_light`): son proyectos normales y
-   se ven también en el modo editor, que es lo que son. */
+/* Los vídeos, del más reciente al más antiguo: TODOS los que sirve
+   `GET /api/proyectos`, que ya deja fuera los talleres de estilo (ver
+   `cargarGaleriaLight`). */
 function videosLight() {
   return ((APP.light.datos || {}).videos || []).slice();
 }
@@ -5417,7 +5487,8 @@ async function apartarVideoLight(video) {
   if (!window.confirm(`¿Apartar «${video.nombre}»?
 
 `
-    + 'Va a la papelera, no se borra del todo.')) return;
+    + 'Va a la papelera, no se borra del todo: se recupera desde «Papelera», '
+    + 'al lado de «Tus vídeos».')) return;
   try {
     await pedir(API.apartar(video.id), { method: 'DELETE' });
     if (videoLightGuardado() === video.id) recordarVideoLight('');
@@ -5430,7 +5501,8 @@ async function descartarTallerLight(taller) {
   if (!window.confirm(`¿Descartar «${taller.nombre}»?
 
 `
-    + 'Va a la papelera, no se borra del todo.')) return;
+    + 'Va a la papelera, no se borra del todo: se recupera desde «Papelera», '
+    + 'al lado de «Tus vídeos».')) return;
   try {
     await pedir(`${API.presetsLight()}/talleres/${encodeURIComponent(taller.id)}`,
       { method: 'DELETE' });
@@ -5530,6 +5602,13 @@ function estiloElegido() {
  * se oculta es la vista, no el dato. */
 
 const CLAVE_VIDEO_LIGHT = 'video_light';
+
+/* LOS MONTAJES QUE NO SON UNA TANDA, por el NOMBRE de su trabajo: el paso del
+   MP4 lanzado suelto («render», por la API o desde otra sesión) y «Aplicar el
+   repaso» («repaso», que acaba montando). Por el nombre y no por el paso: la
+   música y los efectos también se registran en el paso `render`, y no son
+   ningún montaje que seguir en la barra del vídeo. */
+const MONTAJES_SUELTOS = ['render', 'repaso'];
 
 APP.light.video = {
   pid: '',              // el proyecto de este vídeo
@@ -5635,6 +5714,9 @@ function urlDeVideoLight(paso, nombre) {
    guion o no, hay audio o no, hay MP4 o no. */
 async function cargarVideoLight(pid) {
   const v = APP.light.video;
+  // lo del vídeo anterior se aparca, y la cola que se ve es la de ESTE
+  aparcarTrabajoLight(pid);
+  COLA_IMG = colaDe(pid);
   v.cargando = true;
   v.error = '';
   pintarLight();
@@ -5659,6 +5741,8 @@ async function cargarVideoLight(pid) {
     pararPrevia();
     PREVIA.ficha = null;
     await reengancharTandaLight(pid);
+    // y su cola de imágenes sigue donde la dejó (ver `reanudarColaLight`)
+    reanudarColaLight(pid);
     // La vista la decide LO QUE HAY, no lo que se pulsó: al volver de una
     // recarga, un vídeo con guion tiene que abrirse en el guion.
     if (v.vista === 'encargo' || !v.vista) {
@@ -5711,6 +5795,38 @@ async function contarLaTandaQueMurio(pid) {
 }
 
 
+/* AL ABRIR OTRO VÍDEO, LO DEL ANTERIOR SE APARCA.
+ *
+ * El trabajo vive en el servidor y sigue corriendo: aquí solo se deja de
+ * seguirlo en la barra. Antes no se soltaba, y como la ranura es una para todos
+ * los vídeos, el que se abría heredaba la barra del otro —sin reproductor, con
+ * «Generar imágenes» apagado y un «Parar» que paraba el otro—: abrir un vídeo
+ * con otro montándose lo dejaba inservible.
+ *
+ * Una tanda de la cola de «regenerar con nota» no se suelta del todo: sigue de
+ * fondo, porque al acabar hay que marcar sus notas como regeneradas. Al volver
+ * a su vídeo, `reengancharTandaLight` la devuelve a la barra. */
+function aparcarTrabajoLight(pid) {
+  const t = APP.trabajos[CLAVE_VIDEO_LIGHT];
+  if (!t || !t.pid || t.pid === pid) return;
+  const cola = COLAS[t.pid];
+  soltarSeguimiento(CLAVE_VIDEO_LIGHT);
+  delete APP.trabajos[CLAVE_VIDEO_LIGHT];
+  delete ERRORES[CLAVE_VIDEO_LIGHT];
+  if (cola && cola.tid && cola.tid === t.id) {
+    seguirDeFondo(cola.tid, trabajo => terminarTandaDeCola(cola, cola.tanda, trabajo));
+  }
+}
+
+/* AL VOLVER A UN VÍDEO, SU COLA SIGUE DONDE SE QUEDÓ. Mientras estaba cerrado,
+   su tanda en curso se siguió de fondo, pero la SIGUIENTE no se lanzó: una cola
+   no lanza tandas de imágenes por su cuenta en un vídeo que nadie mira (ver
+   `soltarCola`). Se lanza ahora, con el vídeo delante. */
+function reanudarColaLight(pid) {
+  const cola = COLAS[String(pid || '')];
+  if (cola && !cola.corriendo.length && cola.espera.length) soltarCola(cola);
+}
+
 /* SI YA VENÍA CORRIENDO, la barra se vuelve a enganchar.
    El trabajo vive en el SERVIDOR, así que sobrevive a cerrar la pestaña, a
    recargar y a mirarlo desde el móvil — pero sin esto, al volver se veía un
@@ -5721,9 +5837,25 @@ async function reengancharTandaLight(pid) {
   try {
     const datos = await pedir(`${API.trabajosVivos()}?proyecto=`
       + `${encodeURIComponent(pid)}&activos=1`);
-    const vivo = (datos.trabajos || []).find(
-      t => String(t.nombre || '').startsWith('generar:'));
-    if (!vivo) { await contarLaTandaQueMurio(pid); return; }
+    const vivos = datos.trabajos || [];
+    /* Y SI NO HAY TANDA, EL MONTAJE LANZADO APARTE: el MP4 pedido como paso
+       suelto, o «Aplicar el repaso». Sus trabajos no se llaman «generar:…» y
+       esta pantalla los dejaba sin barra —«todavía no hay vídeo» con el montaje
+       de un vídeo largo en marcha—. Se siguen como la tanda del MP4, que es lo
+       que son (ver MONTAJES_SUELTOS). */
+    const vivo = vivos.find(t => String(t.nombre || '').startsWith('generar:'))
+      || vivos.find(t => MONTAJES_SUELTOS.includes(String(t.nombre || '')));
+    if (!vivo) {
+      /* SIN TANDA, PUEDE HABER UNA REGENERACIÓN DE IMÁGENES de este vídeo: la
+         de su cola, que siguió de fondo mientras se miraba otro, o una lanzada
+         desde otra pestaña. Se pone en la barra como lo que es. */
+      const regenera = vivos.find(t => t.paso === 'assets'
+        && (t.unidades || []).length
+        && (t.unidades || []).every(u => String(u).startsWith('escena:')));
+      if (regenera && retomarColaDeImagenes(Object.assign({ proyecto: pid }, regenera))) return;
+      await contarLaTandaQueMurio(pid);
+      return;
+    }
     /* DE QUE TANDA ES EL TRABAJO QUE YA VENIA CORRIENDO.
      *
      * El nombre es «generar:» y las pestañas que recorre (`_correr_cadena` en
@@ -5737,27 +5869,43 @@ async function reengancharTandaLight(pid) {
      * haber pulsado «Montar el vídeo». Visto en un vídeo de catorce minutos.
      *
      * El orden importa: 'render' se mira ANTES que 'video' porque su nombre
-     * lleva las dos pestañas dentro. */
+     * lleva las dos pestañas dentro. Y un montaje suelto ES el del MP4. */
     const nombre = String(vivo.nombre);
-    const tanda = nombre.includes('render') ? 'render'
+    const suelto = !nombre.startsWith('generar:');
+    const tanda = (suelto || nombre.includes('render')) ? 'render'
       : (nombre.includes('video') ? 'video'
         : (nombre.includes('voz') ? 'voz' : 'guion'));
-    // la tanda de las imágenes acaba en el previsualizador; la del MP4, en el vídeo
+    // la tanda de las imágenes acaba en el previsualizador; la del MP4, en el
+    // vídeo. El repaso no se mueve: pudo aplicarse desde las diapositivas, y
+    // ahí se aplica SIN montar (ver `aplicarRepaso`).
     if (tanda === 'video') APP.light.video.vista = 'previa';
-    else if (tanda === 'render') APP.light.video.vista = 'video';
+    else if (tanda === 'render' && nombre !== 'repaso') APP.light.video.vista = 'video';
     // EL PREVISTO, TAMBIÉN AL REENGANCHAR. Sin esto, volver a la pantalla con
     // la tanda ya corriendo —que es el caso normal cuando se mira desde el
-    // móvil— dejaba la barra sin cuenta atrás hasta que terminase.
-    try {
-      APP.light.video.plan = (await pedir(
-        `${API.proyecto(pid)}/generar?tanda=${tanda}`)) || null;
-      APP.light.video.planDe = vivo.id;
-    } catch (e) { /* sin previsto se pinta sin cuenta atrás */ }
+    // móvil— dejaba la barra sin cuenta atrás hasta que terminase. Un montaje
+    // suelto no tiene plan: su cuenta atrás sale de su propio ritmo
+    // (`restanteTandaLight`), y el de la próxima tanda no es el suyo.
+    if (!suelto) {
+      try {
+        APP.light.video.plan = (await pedir(
+          `${API.proyecto(pid)}/generar?tanda=${tanda}`)) || null;
+        APP.light.video.planDe = vivo.id;
+      } catch (e) { /* sin previsto se pinta sin cuenta atrás */ }
+    }
+    // con su nombre y lo que lleva desde ya, y no desde la primera noticia: el
+    // reloj de algo que viene corriendo no empieza al mirarlo
+    APP.trabajos[CLAVE_VIDEO_LIGHT] = Object.assign({}, vivo,
+      { inicio: Date.now() - (vivo.segundos || 0) * 1000 });
     seguirTrabajo(CLAVE_VIDEO_LIGHT, vivo.id, async trabajo => {
-      if (trabajo.estado === 'listo') await cargarVideoLight(pid);
+      if (trabajo.estado === 'listo') {
+        await cargarVideoLight(pid);
+        // lo que hace `aplicarRepaso` al acabar: las notas aplicadas y las
+        // diapositivas con lo que se acaba de redibujar
+        if (nombre === 'repaso') { await cargarRepaso(true); PREVIA.ficha = null; }
+      }
       pintarLight();
     }, () => {
-      if (tanda === 'video') refrescarPlanosLight();
+      if (tanda === 'video' || nombre === 'repaso') refrescarPlanosLight();
       refrescarVivosLight();
     });
   } catch (e) { /* no poder mirar los trabajos no puede tumbar la pantalla */ }
@@ -6593,6 +6741,23 @@ function barraTandaLightAhora(tanda) {
    es peor que no decir nada. */
 function restanteTandaLight(trabajo, avance) {
   const v = APP.light.video;
+  /* EL MONTAJE SUELTO SE PROYECTA CON SU PROPIO RITMO. No tiene previsto de
+     ninguna tanda (ver MONTAJES_SUELTOS), y el del historial no sirve: decía
+     nueve minutos para un render de dos horas, medido con dieciséis lotes en
+     una máquina que ya corría con cuatro. Su barra cuenta clips de verdad
+     (`p8_render`: del 5 al 90 % según caen), así que lo que falta se mide en
+     esta ejecución, por diferencias entre las muestras de `anotarAvance`: con
+     una sola no se dice nada, y pasado el último clip --el muxeo son minutos--
+     se calla. */
+  if (MONTAJES_SUELTOS.includes(String(trabajo.nombre || ''))) {
+    const m = trabajo.muestras;
+    if (!Array.isArray(m) || m.length < 2 || avance >= 0.9) return '';
+    const primera = m[0], ultima = m[m.length - 1];
+    const ritmo = (ultima.f - primera.f) / ((ultima.t - primera.t) / 1000);
+    if (!(ritmo > 0)) return '';
+    const restante = (0.9 - ultima.f) / ritmo - (Date.now() - ultima.t) / 1000;
+    return restante > 5 ? `quedan ~${duracionCorta(restante)} al ritmo de ahora` : '';
+  }
   // EL PREVISTO TIENE QUE SER EL DE ESTE TRABAJO. Por esta misma ranura pasan
   // las tandas y las regeneraciones de un plano suelto, y contar hacia atras
   // desde el previsto de otra cosa es peor que no decir nada.
@@ -6676,9 +6841,8 @@ async function refrescarPlanLight(tanda, forzar) {
  * solo se pinta. Claude va aparte y sin importe porque va contra la
  * suscripcion, y un dolar inventado ahi seria peor que un hueco.
  *
- * El desglose por paso NO esta aqui. Esta pantalla es de tres paradas: lo que
- * hace falta mientras generas es saber cuanto llevas, y en que se ha ido se
- * mira en el modo editor, que es donde ya vive esa tabla.
+ * El desglose por paso se abre pulsando la pastilla (`conmutarCoste`): es la
+ * misma tabla que abria el medidor de arriba, ahora del video de la pantalla.
  */
 
 const COSTE_LIGHT = { ultima: 0, cita: null, pid: '' };
@@ -6712,6 +6876,12 @@ function refrescarCosteLight(forzar) {
       if (APP.light.video.pid !== pid) return;
       APP.light.video.coste = datos;
       refrescarVivosLight();
+      // el desglose abierto dice lo mismo que la pastilla, no lo de antes;
+      // salvo si se está escribiendo en él (el presupuesto): rehacerlo se
+      // llevaría lo tecleado
+      if (COSTE.abierto && !$('#coste-detalle').contains(document.activeElement)) {
+        pintarDesgloseCoste();
+      }
     })
     .catch(() => { /* no poder leer el coste no puede tumbar la pantalla */ });
 }
@@ -6729,8 +6899,14 @@ function costeLightAhora() {
   const datos = APP.light.video.coste;
   const caja = h('span', {
     clase: 'coste-light' + (datos && datos.aviso_presupuesto ? ' aviso' : ''),
-    title: 'Lo que llevas gastado en este vídeo. El desglose por paso está en '
-      + 'el modo editor.',
+    title: 'Lo que llevas gastado en este vídeo. Pulsa para ver el desglose '
+      + 'por paso.',
+    /* EL DESGLOSE SE ABRE DESDE AQUÍ. Vivía en el medidor de la barra de
+       arriba, que en esta pantalla está escondido, y el aviso mandaba a «el
+       modo editor», que ya no existe: el desglose no tenía ninguna puerta.
+       `stopPropagation` porque el oyente del documento cierra el desglose con
+       cualquier clic fuera del medidor de arriba, y este es otro. */
+    onclick: ev => { ev.stopPropagation(); conmutarCoste(); },
   });
   if (!datos) { caja.appendChild(h('span', { clase: 'meta' }, 'coste: —')); return caja; }
   const abierto = proveedorDe(datos, 'openai');
@@ -6903,7 +7079,24 @@ function bloquesLight() {
         },
       }, v.abierto === bloque.id ? 'Cerrar' : 'Cambiar con una frase')));
 
-    if (hayAudio && !editando) {
+    /* EDITADO A MANO Y AÚN NO GRABADO. El karaoke pinta el texto de la TOMA,
+       así que al darle a «Hecho» se volvía a ver la frase vieja y parecía que
+       la edición se había perdido. Mientras el audio no diga lo que hay
+       escrito, se enseña lo escrito y el botón para grabar SU tramo, a la
+       vista y no escondido dentro de «Cambiar con una frase». */
+    const pendiente = hayAudio && !editando
+      && textoVisibleLight(texto) !== textoVisibleLight(conAudio.texto || '');
+    if (pendiente) {
+      const sec = seccionDe[bloque.id];
+      ficha.appendChild(h('p', { clase: 'texto-bloque' }, textoVisibleLight(texto)));
+      ficha.appendChild(h('div', { clase: 'fila' },
+        sec ? h('button', {
+          clase: 'mini', disabled: !!trabajoVideoLight(),
+          onclick: () => cambiarBloqueLight(bloque, sec, true),
+        }, 'Regrabar este tramo con mi texto') : null,
+        h('span', { clase: 'meta' },
+          'el audio todavía dice la versión anterior de este bloque')));
+    } else if (hayAudio && !editando) {
       ficha.appendChild(parrafoKaraokeLight(bloque, conAudio, texto));
     } else {
       const visible = textoVisibleLight(texto);
@@ -7533,8 +7726,11 @@ function guardarRepaso(datos) {
 
 
 async function refrescarNotasPrevia() {
+  const pid = videoAbierto().pid;
   try {
-    guardarRepaso(await pedir(API.repaso(videoAbierto().pid)));
+    const datos = await pedir(API.repaso(pid));
+    // si mientras tanto se ha abierto otro vídeo, estas notas no son las suyas
+    if (videoAbierto().pid === pid) guardarRepaso(datos);
   } catch (e) { PREVIA.notas = []; }
 }
 
@@ -8322,10 +8518,17 @@ function videoLight() {
   return _videoLight;
 }
 
+/* LAS NOTAS SON DEL VÍDEO ABIERTO, y se sabe de cuál. Vivían en el objeto del
+   vídeo abierto, que es UNO para todos, y abrir otro no las vaciaba: la
+   pantalla del vídeo enseñaba las notas del anterior hasta que algo las
+   recargaba, y como los ids de nota se repiten en cada vídeo (R001…), corregir
+   o borrar una de esas tocaba la del mismo número en el vídeo abierto. Es de
+   donde sale también lo que se encola para regenerar. */
 function estadoRepaso() {
   const v = videoAbierto();
-  if (!v.repaso) {
+  if (!v.repaso || v.repaso.pid !== v.pid) {
     v.repaso = {
+      pid: v.pid,
       notas: [], cortes: [], pendientes: 0, catalogo: null,
       cargando: false, texto: '', imagenes: [], t: 0, plano: '',
       abierto: false, editando: null,
@@ -8623,7 +8826,25 @@ const A_LA_VEZ = 3;
    trampa, porque los ids DE NOTA SE RECICLAN --borra R001 y la siguiente vuelve
    a llamarse R001-- y el visto de una nota borrada se lo quedaba la nueva: una
    nota recien escrita salia «Regenerada ✓» sin haberse dibujado nunca. */
-const COLA_IMG = { espera: [], corriendo: [], fallo: {} };
+/* UNA COLA POR VÍDEO, y la del vídeo abierto es `COLA_IMG`.
+   Era una sola para todos, y cada tanda salía hacia el vídeo ABIERTO en ese
+   momento --al lanzarla y al marcar sus notas--: notas de un vídeo en cola,
+   abrir otro, y la tanda siguiente escribía esas notas en los planos del otro y
+   los regeneraba. Ahora cada cola lleva su `pid` y escribe y lanza en SU vídeo;
+   su tanda en curso se sigue aunque se abra otro (`seguirDeFondo`), y lo que
+   pinta en pantalla solo lo pinta si su vídeo está abierto.
+   `tid` y `tanda` son el trabajo en marcha y las notas que lleva. */
+const COLAS = {};
+function colaDe(pid) {
+  const k = String(pid || '');
+  if (!COLAS[k]) COLAS[k] = { pid: k, espera: [], corriendo: [], fallo: {}, tid: '', tanda: [] };
+  return COLAS[k];
+}
+let COLA_IMG = colaDe('');
+
+function esElVideoAbierto(pid) {
+  return !!pid && (APP.light.video || {}).pid === pid;
+}
 
 
 /* EL ✓ LO DICE LA NOTA, Y LO ESCRIBE EL SERVIDOR (`regenerado`: contra qué
@@ -8730,23 +8951,105 @@ async function refrescarLoDibujado() {
 /* SE ESCRIBE EN LA NOTA QUE SU IMAGEN YA SE REHIZO, y con qué texto. Es lo que
    hace que el «Regenerada ✓» siga ahí mañana. Va después del trabajo, no antes:
    si la tanda falla, la nota tiene que seguir pidiendo lo suyo. */
-async function apuntarRegeneradas(tanda) {
-  const v = videoAbierto();
+async function apuntarRegeneradas(tanda, pid) {
+  /* EN LAS NOTAS DE SU VÍDEO, no en las del abierto: la tanda puede acabar
+     mientras se mira otro (ver COLAS), y los ids de nota se repiten de un vídeo
+     a otro -- R001 hay en todos --, así que marcar en el abierto daba por
+     regenerada una nota de otro vídeo que nadie había tocado. */
+  pid = pid || videoAbierto().pid;
   let ultima = null;
   for (const x of tanda) {
     if (!x.nid) continue;
     try {
-      ultima = await pedir(API.repasoNota(v.pid, x.nid), {
+      ultima = await pedir(API.repasoNota(pid, x.nid), {
         method: 'PUT', cuerpo: { regenerado: x.texto },
       });
     } catch (err) { /* no poder marcarla no puede tirar la cola */ }
   }
-  if (ultima) guardarRepaso(ultima);
+  if (ultima && esElVideoAbierto(pid)) guardarRepaso(ultima);
 }
 
-async function soltarCola() {
-  if (COLA_IMG.corriendo.length || !COLA_IMG.espera.length) return;
-  const v = videoAbierto();
+/* LO QUE PASA CUANDO ACABA UNA TANDA DE LA COLA, esté su vídeo abierto o no.
+   La siguiente solo sale si su vídeo está delante (ver `soltarCola`). */
+async function terminarTandaDeCola(cola, tanda, trabajo) {
+  if (trabajo.estado === 'ejecutando') return;
+  if (trabajo.estado === 'listo') {
+    await apuntarRegeneradas(tanda, cola.pid);
+  } else if (trabajo.estado === 'error') {
+    tanda.forEach(x => { if (x.nid) cola.fallo[x.nid] = trabajo.error || 'fallo'; });
+  }
+  cola.corriendo = [];
+  cola.tid = '';
+  cola.tanda = [];
+  if (esElVideoAbierto(cola.pid)) {
+    await refrescarLoDibujado();
+    repintarVideo();
+  }
+  soltarCola(cola);
+}
+
+/* SEGUIR UN TRABAJO SIN PANTALLA: el de la cola de un vídeo que no está
+   abierto. Solo hace falta saber cuándo acaba, así que basta con preguntar, y
+   de una pregunta en una: con la red lenta, dos a la vez podían ver los dos el
+   final y cerrar la misma tanda dos veces. */
+const DE_FONDO = {};
+function seguirDeFondo(tid, alTerminar) {
+  if (!tid || DE_FONDO[tid]) return;
+  const fondo = { vuelo: false, fallos: 0 };
+  DE_FONDO[tid] = fondo;
+  fondo.reloj = setInterval(async () => {
+    if (fondo.vuelo) return;
+    fondo.vuelo = true;
+    let datos = null;
+    try {
+      datos = await pedir(API.trabajo(tid));
+      fondo.fallos = 0;
+    } catch (e) {
+      /* UN SERVIDOR QUE YA NO LO CONOCE --se reinició-- no lo va a terminar
+         nunca. Pasado un minuto sin respuesta se da por caído: si no, su cola
+         se quedaría esperando para siempre a una tanda que ya no existe. */
+      fondo.fallos += 1;
+      if (fondo.fallos >= 30) {
+        datos = { estado: 'error', error: `se perdió la pista de la tanda: ${e.message}` };
+      }
+    } finally {
+      fondo.vuelo = false;
+    }
+    if (DE_FONDO[tid] !== fondo) return;          // ya la ha soltado otro
+    if (!datos || ['pendiente', 'ejecutando'].includes(datos.estado)) return;
+    soltarDeFondo(tid);
+    try { await alTerminar(datos); } catch (e) { console.error(e); }
+  }, 2000);
+}
+function soltarDeFondo(tid) {
+  const fondo = DE_FONDO[tid];
+  if (fondo) clearInterval(fondo.reloj);
+  delete DE_FONDO[tid];
+}
+
+/* La tanda de la cola, seguida donde toca: en la barra si su vídeo está
+   abierto, y sin pantalla si no. */
+function seguirTandaDeCola(cola) {
+  const alTerminar = trabajo => terminarTandaDeCola(cola, cola.tanda, trabajo);
+  if (esElVideoAbierto(cola.pid)) {
+    soltarDeFondo(cola.tid);
+    seguirTrabajo(CLAVE_VIDEO_LIGHT, cola.tid, alTerminar, () => refrescarVivosLight());
+  } else {
+    seguirDeFondo(cola.tid, alTerminar);
+  }
+}
+
+async function soltarCola(cola) {
+  cola = cola || COLA_IMG;
+  if (cola.corriendo.length || !cola.espera.length) return;
+  /* UNA COLA NO LANZA TANDAS EN UN VÍDEO QUE NADIE MIRA. La de un vídeo que se
+     ha dejado sigue la tanda que ya llevaba en marcha --de fondo, para marcar
+     sus notas--, pero la siguiente espera a que se vuelva a él
+     (`reanudarColaLight`). Las tandas de imágenes se lanzan de una en una y
+     cada una se paga: soltarlas solas en un vídeo cerrado es gastar sin que
+     nadie lo vea, y sumar tandas a la vez sin que nadie lo haya decidido. */
+  if (!esElVideoAbierto(cola.pid)) return;
+  const pid = cola.pid;
   /* UN PLANO, UNA VEZ POR TANDA. Dos notas de la misma imagen son dos
      peticiones, pero no pueden ir en el mismo trabajo: la segunda pisaria el
      feedback de la primera y se dibujaria una sola vez. La que sobra se queda
@@ -8754,13 +9057,14 @@ async function soltarCola() {
   const tanda = [];
   const puestos = new Set();
   while (tanda.length < A_LA_VEZ) {
-    const i = COLA_IMG.espera.findIndex(x => !puestos.has(x.sid));
+    const i = cola.espera.findIndex(x => !puestos.has(x.sid));
     if (i < 0) break;
-    puestos.add(COLA_IMG.espera[i].sid);
-    tanda.push(COLA_IMG.espera.splice(i, 1)[0]);
+    puestos.add(cola.espera[i].sid);
+    tanda.push(cola.espera.splice(i, 1)[0]);
   }
   if (!tanda.length) return;
-  COLA_IMG.corriendo = tanda.map(x => ({ sid: x.sid, nid: x.nid || '' }));
+  cola.corriendo = tanda.map(x => ({ sid: x.sid, nid: x.nid || '' }));
+  cola.tanda = tanda;
   repintarVideo();
   try {
     /* EL TEXTO VA AL FEEDBACK DE ESA UNIDAD, que es el cajon que ya lee quien
@@ -8768,41 +9072,37 @@ async function soltarCola() {
 
        Los de la tanda van en UNA sola llamada: son params del mismo paso, y
        mandarlos de uno en uno son tres escrituras del estado que se pisan el
-       cerrojo entre ellas para decir lo mismo. */
+       cerrojo entre ellas para decir lo mismo.
+
+       Y FUSIONANDO con lo que ya tiene la unidad. Sin esto el servidor
+       sustituye la unidad entera y se lleva su dirección, su cartela y su
+       carta: en un vídeo largo, los veintiún planos retocados en el repaso
+       perdieron así su dirección y se redibujaron con la acción del tramo. Un
+       servidor viejo ignora la clave. */
     const conTexto = tanda.filter(x => x.texto);
     if (conTexto.length) {
       const unidades = {};
       conTexto.forEach(x => { unidades[`escena:${x.sid}`] = { feedback: x.texto }; });
-      await pedir(API.params(v.pid, 'assets'), {
-        method: 'PUT', cuerpo: { params: { unidades } },
+      await pedir(API.params(pid, 'assets'), {
+        method: 'PUT', cuerpo: { params: { unidades }, fusionar_unidades: true },
       });
     }
     /* `rehacer: true` a proposito: aqui SI lo estas pidiendo, y con el mismo
        prompt la cache devolveria la imagen que acabas de rechazar. */
-    const datos = await pedir(API.ejecutar(v.pid, 'assets'), {
+    const datos = await pedir(API.ejecutar(pid, 'assets'), {
       method: 'POST',
       cuerpo: { unidades: tanda.map(x => `escena:${x.sid}`), rehacer: true },
     });
     const tid = datos.trabajo_id || (datos.trabajo || {}).id;
     if (!tid) throw new Error('el servidor no ha devuelto ningún trabajo');
-    seguirTrabajo(CLAVE_VIDEO_LIGHT, tid, async trabajo => {
-      if (trabajo.estado === 'listo') {
-        await apuntarRegeneradas(tanda);
-      } else if (trabajo.estado === 'error') {
-        tanda.forEach(x => { if (x.nid) COLA_IMG.fallo[x.nid] = trabajo.error || 'fallo'; });
-      }
-      if (trabajo.estado !== 'ejecutando') {
-        COLA_IMG.corriendo = [];
-        await refrescarLoDibujado();
-        repintarVideo();
-        soltarCola();
-      }
-    }, () => refrescarVivosLight());
+    cola.tid = tid;
+    seguirTandaDeCola(cola);
   } catch (err) {
-    tanda.forEach(x => { if (x.nid) COLA_IMG.fallo[x.nid] = err.message; });
-    COLA_IMG.corriendo = [];
-    repintarVideo();
-    soltarCola();
+    tanda.forEach(x => { if (x.nid) cola.fallo[x.nid] = err.message; });
+    cola.corriendo = [];
+    cola.tanda = [];
+    if (esElVideoAbierto(pid)) repintarVideo();
+    soltarCola(cola);
   }
 }
 
@@ -10393,7 +10693,7 @@ async function regenerarParteLight(ficha, parte) {
 
 async function borrarPresetLight(ficha) {
   if (!window.confirm(`¿Mandar el estilo «${ficha.nombre}» a la papelera?\n\n`
-    + 'Se puede recuperar desde la papelera.')) return;
+    + 'Se puede recuperar desde «Papelera», al lado de «Tus vídeos».')) return;
   try {
     await pedir(API.presetLight(ficha.id), { method: 'DELETE' });
     toast(`«${ficha.nombre}» apartado`);
