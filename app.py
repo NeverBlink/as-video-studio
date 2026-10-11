@@ -7083,10 +7083,39 @@ def _talleres_sueltos():
                         "nombre": ficha.get("nombre") or ficha.get("id"),
                         "creado": ficha.get("creado", ""),
                         "actualizado": ficha.get("actualizado", ""),
-                        "encargo": ficha.get(CONFIG_ENCARGO_TALLER) or None,
+                        "encargo": (ficha.get(CONFIG_ENCARGO_TALLER)
+                                    or _encargo_recuperado(ficha.get("raiz"))),
                         "imagenes": imagenes})
     sueltos.sort(key=lambda f: str(f.get("actualizado") or ""), reverse=True)
     return sueltos
+
+
+def _encargo_recuperado(raiz):
+    """Lo que se puede recuperar del encargo de un taller viejo. -> dict | None
+
+    Los talleres lanzados antes de octubre de 2026 no guardaban su encargo
+    (CONFIG_ENCARGO_TALLER), y son justo los que se quedaron a medias por el
+    fallo de las laminas. Su bitacora si dice el nombre, el idioma, el ritmo y
+    el principio de la descripcion de la voz: con eso el formulario de
+    «Retomar» no vuelve vacio. El tono no se apuntaba en ningun sitio y hay que
+    volver a escribirlo.
+    """
+    if not raiz:
+        return None
+    try:
+        eventos = leer_jsonl(os.path.join(raiz, "bitacora.jsonl")) or []
+    except Exception:                                         # noqa: BLE001
+        return None
+    encargo = {}
+    for evento in eventos:
+        datos = evento.get("datos") or {}
+        if evento.get("evento") == "preset_light_lanzado":
+            for clave in ("nombre", "idioma", "ritmo"):
+                if datos.get(clave):
+                    encargo[clave] = datos[clave]
+        elif evento.get("evento") == "voz_descrita" and datos.get("encargo"):
+            encargo["voz_prompt"] = datos["encargo"]
+    return encargo or None
 
 
 def _taller_de(ficha):
