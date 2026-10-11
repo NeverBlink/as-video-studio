@@ -332,6 +332,19 @@ def _correr_paso(avisar, ctx, paso_id, unidades, opciones=None):
     if paso_id == "assets":
         dependencias = resultado.get("dependencias") if isinstance(resultado, dict) else None
         modulo.propagar_dependencias(ctx.estado, dependencias)
+        # Y la cartela de un plano absorbido pasa al plano que la lleva ANTES de
+        # que el retiro de mas abajo borre sus params: si no, se pierde sin
+        # aviso y su tramo vuelve a planos sin dirigir (ver
+        # `p6_assets.reubicar_cartelas`).
+        #
+        # SOLO EN PASADA COMPLETA, que es la unica que retira (ver abajo): con
+        # unidades sueltas el plano absorbido sigue declarado y su cartela no
+        # corre peligro. Y moverla ahi ensuciaria al hogar sin sellarlo -- no
+        # va en esa pasada --, o sea un plano obsoleto mas que nadie ha tocado.
+        if not unidades:
+            modulo.reubicar_cartelas(
+                ctx.estado,
+                resultado.get("plan") if isinstance(resultado, dict) else None)
 
     ligeras, recortadas = _aligerar(salidas)
     version = ctx.estado.completar(paso_id, ligeras, mapa)
@@ -2747,9 +2760,15 @@ def guardar_catalogo(pid: str, cuerpo: dict = Body(default=None)):
     # /escenarios. Guardar el catalogo a mano las borraba, y con ellas
     # desaparecian los logos de todos los planos.
     previo = (ctx.estado.params("assets") or {}).get("catalogo") or {}
-    for clave in ("reales", "_firma_guion"):
+    # Y la marca de catalogo SENCILLO (`catalogo_visual._limpiar`), por lo
+    # mismo: la pone quien deduce el catalogo, y editarlo a mano no puede
+    # devolver el video a la escalera de cartas de antes sin que nadie lo
+    # decida. Al reves tampoco: un catalogo de antes no la gana por guardarse.
+    for clave in ("reales", "_firma_guion", "sencillo"):
         if clave in previo and clave not in catalogo:
             limpio[clave] = previo[clave]
+    if catalogo.get("sencillo"):
+        limpio["sencillo"] = True
     ctx.estado.actualizar_params("assets", {"catalogo": limpio})
     ctx.bitacora.anotar("catalogo_guardado", "assets", {
         "personajes": len(limpio["reparto"]), "sets": len(limpio["sets"]),
@@ -3060,6 +3079,12 @@ def _correr_escenarios(avisar, ctx, ajuste_catalogo, peticion, rehacer):
                   # y no fallaba -- simplemente no salia ningun logo.
                   "reales": ficha.get("reales") or [],
                   "_firma_guion": firma}
+        # EL CATALOGO NUEVO PIDE PLANOS SENCILLOS. Se guarda la marca con el:
+        # sin ella, p6 lo planificaria como uno de antes. Y solo aqui, donde se
+        # deduce de nuevo: a un catalogo ya guardado no se le anade nunca,
+        # porque cambiaria las cartas y los prompts de un video ya pagado.
+        if ficha.get("sencillo"):
+            limpio["sencillo"] = True
         if not limpio["reparto"] and not limpio["sets"]:
             raise RuntimeError(
                 "del guion no ha salido ni un personaje ni un sitio. Sin eso no "
@@ -3904,6 +3929,53 @@ def _direccion():
     return PASOS_MODULOS.direccion
 
 
+#: {pid: (clave, escenas)}. Ver `_escenas_que_va_a_rodar`.
+_ESCENAS_VIVAS = {}
+
+
+def _escenas_que_va_a_rodar(ctx):
+    """Los planos que rodaria la tanda AHORA, sin efectos. -> [escenas] o None
+
+    Es `p6_assets.planificar` y nada mas: sin el corte de respaldo de
+    `_plan_de_planos`, que escribe en disco y en la bitacora, porque esto lo
+    pregunta una comprobacion («¿esta al dia la direccion?») que no puede dejar
+    rastro. Y MEMORIZADO por la firma de assets y su version activa, que es de
+    lo que depende el plan: planificar un video de catorce minutos son 0,8 s, y
+    lo preguntan las pantallas de la receta y de la estimacion cada vez que se
+    abren.
+    """
+    try:
+        clave = (ctx.estado.firma("assets"), ctx.proyecto.ruta_paso("assets"))
+    except Exception:                                       # noqa: BLE001
+        return None
+    guardado = _ESCENAS_VIVAS.get(ctx.id)
+    if guardado and guardado[0] == clave:
+        return guardado[1]
+    try:
+        plan = PASOS_MODULOS.p6_assets.planificar(
+            ctx.proyecto, ctx.estado.params("assets") or {}) or {}
+    except Exception:                                       # noqa: BLE001
+        return None
+    escenas = plan.get("escenas") or []
+    _ESCENAS_VIVAS[ctx.id] = (clave, escenas)
+    return escenas
+
+
+def _planos_por_dirigir(ctx, escenas):
+    """Planos SIN IMAGEN TODAVIA que se iban a pagar sin direccion. -> [ids]
+
+    Solo los que no tienen imagen, y es a proposito: un plano sin dirigir que
+    ya se genero -- los diez de un video largo del 28-09-2026, alguno retocado
+    despues en el repaso -- es trabajo hecho, y dirigirlo ahora cambiaria sus
+    params y lo mandaria a pagar otra vez. Lo que esto evita es la PRIMERA
+    imagen sin direccion, que es la que no tiene vuelta atras sin pagar dos
+    veces.
+    """
+    hechos = set(ctx.estado.unidades_producidas("assets"))
+    return [sid for sid in _direccion().sin_dirigir(escenas, _plan_de_direccion(ctx))
+            if f"escena:{sid}" not in hechos]
+
+
 def _plan_de_direccion(ctx):
     """Lo dirigido, POR UNIDAD: {"S013": "a hand covers the screen"}."""
     bloque = (ctx.estado.params("assets") or {}).get("unidades") or {}
@@ -4113,7 +4185,7 @@ def proponer_redactado(pid: str, cuerpo: dict = Body(default=None)):
             "eventos": f"/api/trabajos/{trabajo_id}/eventos"}
 
 
-def _correr_direccion(avisar, ctx, ajuste, aplicar=False):
+def _correr_direccion(avisar, ctx, ajuste, aplicar=False, solo_faltan=False):
     direccion = _direccion()
     assets = ctx.estado.params("assets") or {}
     plan_assets = _plan_de_planos(ctx, avisar)
@@ -4122,6 +4194,22 @@ def _correr_direccion(avisar, ctx, ajuste, aplicar=False):
         raise RuntimeError("no hay planos todavía y no se ha podido cortar la "
                            "narración: comprueba que la voz haya dejado su "
                            "audio_meta.json")
+    beats = (plan_assets or {}).get("beats")
+    # SOLO LOS QUE FALTAN, si el video ya estaba dirigido y se pide lo
+    # pendiente. Los beats van en paralelo a las escenas y se filtran a la vez.
+    ya = _plan_de_direccion(ctx)
+    faltan = set(_planos_por_dirigir(ctx, escenas)) if solo_faltan else set()
+    if solo_faltan and ya and not faltan:
+        avisar(1.0, "todos los planos que faltan por generar ya están dirigidos")
+        return {"plan": {}, "planos": 0, "dirigidos": 0, "avisos": [],
+                "aplicado": False}
+    if faltan:
+        avisar(0.03, f"{len(faltan)} plano(s) sin dirigir: se dirigen solo esos "
+                     f"y los demás se quedan como están")
+        pares = [(e, (beats or [])[i] if i < len(beats or []) else {})
+                 for i, e in enumerate(escenas) if e.get("id") in faltan]
+        escenas = [e for e, _ in pares]
+        beats = [b for _, b in pares]
     # TODO EL CONTEXTO DE UNA VEZ: el estilo tal y como lo recibe el modelo de
     # imagen, los sitios con su descripción literal, el reparto y la acción del
     # tramo de cada plano. Es lo que le permite escribir SABIENDO cómo se va a
@@ -4139,14 +4227,19 @@ def _correr_direccion(avisar, ctx, ajuste, aplicar=False):
         idioma=_idioma_del_video(ctx),
         catalogo=(assets.get("catalogo")
                   or (plan_assets or {}).get("catalogo") or {}),
-        beats=(plan_assets or {}).get("beats"))
+        beats=beats)
     ctx.bitacora.anotar("direccion", "assets", {
         "planos": ficha.get("planos"), "dirigidos": ficha.get("dirigidos"),
-        "ajuste": ajuste, "aplicar": bool(aplicar)})
+        "ajuste": ajuste, "aplicar": bool(aplicar),
+        **({"solo_faltaban": sorted(faltan)} if faltan else {})})
     # Desde una receta se APLICA, o la tanda paga la llamada y sigue como si no
     # hubiera pasado nada. Es la misma regla que el plan de cartelas.
     if aplicar and isinstance(ficha.get("plan"), dict):
-        _guardar_direccion_por_unidad(ctx, ficha["plan"])
+        # con solo los que faltaban, lo de antes va DELANTE en la fusion:
+        # `_guardar_direccion_por_unidad` quita la direccion de todo plano que
+        # no venga en el plan, y los ya dirigidos no vienen
+        guardar = dict(ya, **ficha["plan"]) if faltan else ficha["plan"]
+        _guardar_direccion_por_unidad(ctx, guardar)
         ficha["aplicado"] = True
     avisar(1.0, f"{ficha.get('dirigidos')} de {ficha.get('planos')} planos dirigidos")
     return ficha
@@ -5542,7 +5635,11 @@ def _que_hace(tarea_id, ctx, receta, modo="pendientes", solo_montar=False):
         return _correr_plan_cartelas, (ctx, _ajuste_de_fase(receta, "plan_cartelas"),
                                        True)
     if tarea_id == "direccion":
-        return _correr_direccion, (ctx, _ajuste_de_fase(receta, "direccion"), True)
+        # «Generar lo pendiente» dirige SOLO los planos que falten: volver a
+        # dirigirlos todos reescribiria las lineas de los que ya tienen imagen
+        # y las dejaria obsoletas, o sea que se pagarian otra vez.
+        return _correr_direccion, (ctx, _ajuste_de_fase(receta, "direccion"), True,
+                                   modo != "todo")
     if tarea_id == "piezas":
         # personajes y piezas de una vez: es lo que hace falta antes de los
         # planos, y por separado son dos botones porque cada uno paga lo suyo
@@ -5602,7 +5699,16 @@ def _esta_al_dia(ctx, tarea):
             CONFIG_CARTELAS_DECIDIDAS) == firma
     if tid == "direccion":
         unidades = (ctx.estado.params("assets") or {}).get("unidades") or {}
-        return any((u or {}).get("direccion") for u in unidades.values())
+        if not any((u or {}).get("direccion") for u in unidades.values()):
+            return False
+        # AL DIA ES QUE NO QUEDE NINGUN PLANO POR DIRIGIR en el plan que va a
+        # rodar la tanda, no que haya alguno dirigido. En un video largo
+        # (28-09-2026) el plan cambio despues de dirigirlo y diez planos se
+        # generaron sin direccion, con la tarea dandose por hecha.
+        escenas = _escenas_que_va_a_rodar(ctx)
+        if escenas is None:
+            return True       # sin plan que mirar, lo de antes: hay direccion
+        return not _planos_por_dirigir(ctx, escenas)
     if tid == "piezas":
         # las piezas viven dentro de assets: si assets esta al dia, estan
         return ctx.estado.al_dia("assets")

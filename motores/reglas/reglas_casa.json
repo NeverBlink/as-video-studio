@@ -123,8 +123,8 @@
       "id": "expresion-facial-explicita",
       "ambito": "prompt_imagen",
       "prioridad": 1,
-      "regla": "Todo prompt que contenga personajes debe declarar de forma explicita la expresion facial de cada uno, acorde al tono de la escena (boca, cejas y mirada). La sonrisa esta PROHIBIDA por defecto: solo se dibuja si el plan de escenas pide un tono alegre. Lo de las hojas de reparto lo dice la regla hoja-reparto-cara-visible, de ambito reparto: aqui no lo leia nadie. Y en todo prompt con caras se anade al negativo 'smiling, grin, cheerful expression'.",
-      "por_que": "El generador de imagen tiene un sesgo fuerte hacia las caras sonrientes: si no se le contradice explicitamente, marineros contrabandistas, aduaneros y militares salen todos sonriendo de noche y la imagen contradice el tono de la narracion. Decir solo 'serious' no basta; hay que describir la boca y prohibir la sonrisa en el negativo.",
+      "regla": "Todo prompt que contenga personajes declara de forma explicita la expresion facial de cada uno (boca, cejas y mirada), y esa expresion SALE DE LO QUE PASA EN ESE PLANO, no de un valor por defecto: alegria clara donde pasa algo bueno para quien sale (un logro, una fiesta, un reencuentro, el dinero que entra); caras relajadas y naturales en los momentos corrientes (alguien trabajando, explicando, escuchando o mirando), que pueden llevar una sonrisa leve si el momento es cordial; y tension, tristeza o gravedad solo donde la escena las tiene (una amenaza, una perdida, un juicio, un delito de noche). En esas escenas oscuras se dice expresamente que nadie sonrie, porque el generador tiende a sonreir. Ni se fuerza la sonrisa ni se prohibe por sistema: nada de 'smiling' en el negativo de todos los prompts y nada de cara seria de oficio. Lo de las hojas de reparto lo dice la regla hoja-reparto-cara-visible, de ambito reparto.",
+      "por_que": "El generador de imagen tiene un sesgo fuerte hacia las caras sonrientes: si no se le contradice explicitamente, marineros contrabandistas, aduaneros y militares salen todos sonriendo de noche y la imagen contradice el tono de la narracion. Decir solo 'serious' no basta; en esas escenas hay que describir la boca y prohibir la sonrisa. PERO NO EN TODAS (30-09-2026): con la sonrisa prohibida por defecto y el tono neutro traducido a 'boca cerrada y recta, No smiling', en un video largo 241 de los 257 planos con gente (el 94 %) salieron serios tirando a tristes -- tambien las fiestas, el publico aplaudiendo y quien saludaba al espectador. Arreglar un video oscuro con una regla general estropeo todos los demas: la cara la decide la escena.",
       "origen": {
         "proyecto": "caso-meridiano",
         "gate": 1,
@@ -133,7 +133,12 @@
           "S06",
           "S07"
         ],
-        "feedback": "los personajes siempre salen sonriendo"
+        "feedback": "los personajes siempre salen sonriendo",
+        "revisada": {
+          "fecha": "2026-09-30",
+          "proyecto": "video_largo_light",
+          "feedback": "todas las personas salen siempre serias tirando a tristes, nunca felices; deberia ser contextual"
+        }
       },
       "fecha": "2026-08-12"
     },
@@ -141,8 +146,8 @@
       "id": "hoja-reparto-cara-visible",
       "ambito": "reparto",
       "prioridad": 1,
-      "regla": "La hoja de reparto tiene que ENSENAR LA CARA de cada personaje: ojos, cejas y boca visibles, con expresion neutra y seria, y sin nada que la tape POR ACCIDENTE (reflejos, brillos de pantalla, sombras, pelo delante, gafas de sol). En el negativo va siempre smiling, grin, cheerful expression. EXCEPCION, y es la unica: si la descripcion o el feedback piden EXPRESAMENTE una cara tapada -- mascara, casco integral, pasamontanas, antifaz, venda --, esa prenda pasa a SER la cara de ese personaje: se dibuja identica en las dos filas, con la misma forma, las mismas marcas y los mismos colores, distinta de la de los demas, y nunca vaga, borrosa ni en sombra. Lo que la regla exige no es una cara: es algo copiable donde va la cara. La hoja viaja como referencia a todos los planos donde sale ese personaje, asi que lo que haya ahi se hereda; una hoja sin nada fijo no fija nada y cada plano se inventa una cosa distinta.",
-      "por_que": "Paso: la descripcion del grupo traia puesta en escena en vez de rasgos (faces mostly hidden in monitor glare) y, sobre el fondo liso de la hoja -- donde no hay ningun monitor que emita ese brillo --, el modelo dibujo el reflejo COMO UNA PLACA BLANCA sobre los ojos. Los nueve planos que usaban esa hoja tenian orden de copiar esos personajes y no habia ninguna cara que copiar. La excepcion se anadio el 23-08 por el caso contrario (PENDIENTE 32): se pidieron ocho hackers con mascara de Anonymous y salieron a cara descubierta dos veces seguidas, porque esta regla se escribe DETRAS del feedback y decia 'mascaras'. Un reflejo es un accidente y una mascara es vestuario: lo primero rompe la hoja y lo segundo no, mientras se dibuje identico y copiable.",
+      "regla": "La hoja de reparto tiene que ENSENAR LA CARA de cada personaje: ojos, cejas y boca visibles, con una expresion en reposo, tranquila y relajada (ni seria ni sonriente), y sin nada que la tape POR ACCIDENTE (reflejos, brillos de pantalla, sombras, pelo delante, gafas de sol). La hoja fija QUIEN es, no que cara pone: cada plano le pone la expresion que pide su escena. EXCEPCION, y es la unica: si la descripcion o el feedback piden EXPRESAMENTE una cara tapada -- mascara, casco integral, pasamontanas, antifaz, venda --, esa prenda pasa a SER la cara de ese personaje: se dibuja identica en las dos filas, con la misma forma, las mismas marcas y los mismos colores, distinta de la de los demas, y nunca vaga, borrosa ni en sombra. Lo que la regla exige no es una cara: es algo copiable donde va la cara. La hoja viaja como referencia a todos los planos donde sale ese personaje, asi que lo que haya ahi se hereda; una hoja sin nada fijo no fija nada y cada plano se inventa una cosa distinta.",
+      "por_que": "Paso: la descripcion del grupo traia puesta en escena en vez de rasgos (faces mostly hidden in monitor glare) y, sobre el fondo liso de la hoja -- donde no hay ningun monitor que emita ese brillo --, el modelo dibujo el reflejo COMO UNA PLACA BLANCA sobre los ojos. Los nueve planos que usaban esa hoja tenian orden de copiar esos personajes y no habia ninguna cara que copiar. La excepcion se anadio el 23-08 por el caso contrario (PENDIENTE 32): se pidieron ocho hackers con mascara de Anonymous y salieron a cara descubierta dos veces seguidas, porque esta regla se escribe DETRAS del feedback y decia 'mascaras'. Un reflejo es un accidente y una mascara es vestuario: lo primero rompe la hoja y lo segundo no, mientras se dibuje identico y copiable. El 30-09-2026 se quitaron 'neutra y seria' y el negativo de la sonrisa: la hoja viaja a todos los planos de ese personaje y su gesto se heredaba, asi que salia serio en todos.",
       "origen": {
         "proyecto": "video_largo",
         "assets": [

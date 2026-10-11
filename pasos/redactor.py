@@ -186,15 +186,19 @@ LO QUE DECIDES TU, PLANO A PLANO
       · si lo que se dice es malo para quien sale (pierde, no le llega, se
         queda sin algo), la cara es de eso;
       · si es BUENO para quien sale (le alcanza, lo consigue, celebra),
-        **sonrie**, y hay que escribirlo: la sonrisa esta prohibida por defecto
-        en el negativo del prompt, asi que la unica forma de que alguien sonria
-        es que tu lo pidas;
-      · si esta explicando, trabajando o mirando, es neutra -- que NO es una
-        cara de enfado.
+        **sonrie**, y hay que escribirlo;
+      · si esta explicando, trabajando, escuchando o mirando, la cara es
+        relajada y natural, y puede sonreir un poco si el momento es cordial:
+        eso NO es una cara seria ni de enfado.
 
-    Un plano con gente sin expresion no sale «como toque»: sale SERIO, porque el
-    negativo prohibe la sonrisa. Paso de verdad: una familia que puede comer un
-    mes entero con cinco gramos de oro salio con cara de enfado.
+    La cara se elige por lo que le pasa a quien sale, no por lo serio que sea
+    el tema del video.
+
+    Un plano con gente sin expresion no sale «como toque»: el generador la
+    decide a ciegas, o la copia de la hoja del personaje. Paso de verdad: una
+    familia que puede comer un mes entero con cinco gramos de oro salio con
+    cara de enfado, y en otro video casi todo el mundo salio serio tirando a
+    triste.
 
     Se comprueba antes de gastar un centimo (`redactor.sin_declarar`), y si aun
     asi falta, el codigo le pone la del tono de su tramo -- que es mejor que
@@ -497,7 +501,7 @@ def proponer(escenas, ajuste=None, avisar=None, proyecto_id=None, cwd=None,
     flojos = sin_declarar(plan, dirigibles)
     if flojos:
         avisos.append(f"{len(flojos)} plano(s) con gente no declaran la "
-                      f"expresion facial (sin ella nadie sonrie nunca): "
+                      f"expresion facial (sin ella la cara no sale de la escena): "
                       + ", ".join(flojos[:8]))
     estadisticas.anotar(PASO, segundos, tamano=len(dirigibles), ajuste=elegido,
                         proyecto=proyecto_id, unidades=len(plan),

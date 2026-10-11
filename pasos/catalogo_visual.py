@@ -113,6 +113,18 @@ CUANTOS_PLANOS = """
     sitio y acaban siendo el anterior con un retoque, que es exactamente lo que
     este catalogo existe para impedir."""
 
+#: Lo que se le pide al director de arte, y SOLO lo que alguien usa.
+#:
+#: SE PEDIAN CUATRO COSAS MAS QUE ESTA VERSION TIRABA (octubre de 2026): las
+#: cosas REALES que bajar de Wikimedia Commons, los COMPONENTES (mapas), los
+#: LUGARES que rotular y los CAPITULOS. `_correr_escenarios` (app.py) guarda
+#: solo el reparto, los sitios y los tramos --y `reales`, que aqui ya no lee
+#: nadie desde que se fue la descarga de Commons--, y el PUT del catalogo lo
+#: mismo. O sea que el agente pensaba y escribia cuatro secciones, y se pagaban
+#: sus tokens, para tirarlas en la linea siguiente. `_limpiar` las sigue
+#: entendiendo si llegan, y sigue devolviendo `reales` (vacio): su PRESENCIA es
+#: la senal con la que `_correr_escenarios` sabe que el catalogo no es de antes
+#: de que existiera, y quitarla haria volver a deducir cada catalogo.
 CRITERIO = """
 COMO SE DECIDE
 Un video de animacion narrada se lee bien cuando cada frase tiene su imagen y
@@ -166,6 +178,12 @@ entre un plano y el siguiente.
     miembro uno por uno -- pelo, piel, complexion y ropa de cada uno --, porque la
     hoja tiene que dibujarlos distinguibles entre si: si describes al grupo en
     bloque, en los planos sale el mismo diseno repetido.
+  - CADA UNO SE DISTINGUE DE LOS DEMAS A PRIMERA VISTA. Dos personajes que
+    salen juntos no pueden compartir color de pelo Y color de ropa: cambia al
+    menos dos de estas cosas entre cualquier pareja del reparto -- color o forma
+    del pelo, color de la ropa, gafas o barba, tono de piel, edad --. Paso de
+    verdad: el estafador y su socio iban los dos de traje oscuro con corbata
+    roja y pelo castano, y salieron gemelos en el mismo plano.
 
 SETS — donde ocurre
 Un set es un LUGAR, no un plano. Agrupa el guion en los sitios donde de verdad
@@ -213,59 +231,28 @@ rodadas en el garaje del plano de antes.
     hecho, que lo distingue --, no que pasa en el. Entra literal en el prompt de
     todos los planos rodados ahi, asi que es lo unico que sostiene el
     reconocimiento del lugar.
-
-REALES — lo que existe de verdad y hay que enseñar, no imaginar
-Un documental habla de cosas que existen: una empresa, un edificio, una ciudad,
-un modelo de avion, una persona publica. Si nadie dice cuales son, el generador
-dibuja lo que se imagina que es eso -- un banco generico con un logo inventado, un
-edificio con forma de edificio-- y el espectador que conoce la cosa ve que no es.
-
-Aqui listas esas cosas para que se les busque una imagen real en Wikimedia
-Commons y se le adjunte al plano que las nombra.
-
-  - Entran las que un espectador podria RECONOCER: marcas y empresas (tipo
-    'logo'), edificios y ciudades identificables (tipo 'lugar'), objetos con
-    forma propia -- un modelo concreto de avion, de coche, de arma-- (tipo
-    'objeto') y personas publicas de verdad (tipo 'persona').
-  - NO entran los personajes del reparto: esos ya tienen su hoja, y una foto
-    real compitiendo con la hoja rompe justo lo que la hoja fija. Si alguien es
-    a la vez publico y del reparto, va SOLO al reparto.
-  - NO entran las cosas genericas: 'un banco', 'un ordenador', 'una carretera'.
-    Si no tiene nombre propio, no hay nada real que ensenar.
-  - 'buscar' es como se llama en Commons, EN INGLES y sin ambiguedad. Commons es
-    un archivo internacional: «Aurora» devuelve la ciudad, «Sede Central»
-    el banco. Si el nombre es ambiguo, desambigualo tu.
-  - 'palabras' son las formas con las que el guion la nombra, EN EL IDIOMA DEL
-    GUION, porque es lo que se cruza con cada frase para saber en que plano
-    adjuntarla.
-  - Se generoso pero no exhaustivo: entre cinco y quince. Cada una se baja una
-    vez y se guarda, pero solo se adjunta al plano que la nombra.
-
-COMPONENTES — cuando lo que hay que ensenar es un MAPA
-Hay tramos que no se resuelven dibujando un sitio. Cuando la narracion describe
-un recorrido entre dos puntos del mundo, una distancia o una procedencia, lo que
-se ve tiene que ser un mapa de verdad, no una ilustracion de un mapa: se dibuja
-con geometria real (Natural Earth) y sale mucho mejor que cualquier dibujo.
-
-  - Solo hay estas regiones dibujables: {regiones_mapa}. Si tu recorrido no cabe
-    entero en una de ellas, no pongas el componente.
-  - 'origen' y 'destino' llevan coordenadas [latitud, longitud] de verdad. Una
-    coordenada inventada dibuja una flecha que sale del mar.
-  - 'palabras' son las del guion que piden ese mapa. Un componente solo gana el
-    plano si el texto lo pide claramente, asi que se especifico: 'ruta',
-    'kilometros', 'zarpo de', el nombre de los dos puntos.
-  - Como mucho dos o tres en un video. Un mapa cada poco deja de decir nada.
-
-LUGARES — el rotulo que situa
-Sitios que la narracion nombra y conviene rotular en pantalla cuando se
-mencionan ('manzanillo' -> 'PUERTO DE MANZANILLO'). Es distinto del 'rotulo' del
-set, que sale al ENTRAR en el sitio: esto sale cuando se NOMBRA, este donde
-este el plano. Solo nombres propios de sitio, y solo los que importen.
-
-CAPITULOS — donde el video cambia de asunto
-Si el guion tiene partes claras, marca el bloque donde arranca cada una con su
-titulo. Sale como cabecera a pantalla completa. Tres o cuatro en un video, no
-uno cada dos minutos; y si el guion es un relato continuo, ninguno.
+  - Y POR ESO MISMO VA CASI VACIA: la arquitectura (paredes, suelo, techo o
+    cielo, luz) y COMO MUCHO DOS rasgos fijos que lo hagan reconocible. Veinte
+    palabras, no cuarenta. Todo lo que pongas aqui sale dibujado en TODOS los
+    planos de ese sitio, lo pida el plano o no, y cada cosa de mas es una
+    ocasion de dibujarla mal. Lo que pasa y los objetos de cada momento los
+    pone despues la direccion de cada plano, que es quien sabe cuales hacen
+    falta. Nada de:
+      · gente (ni publico, ni empleados, ni transeuntes): quien sale lo dice el
+        reparto del tramo;
+      · objetos sueltos o en cantidad (telefonos, cables, pilas de papeles,
+        tazas, estatuillas, microfonos): cada uno sale en cada plano;
+      · cosas que llevan letras: carteles, placas, matriculas, etiquetas,
+        precios, pantallas, periodicos. El generador las rellena con palabras
+        que nadie ha pedido;
+      · banderas. Si hace falta una, di CUAL («the flag of the United States»):
+        «two flags» sin mas salio como la bandera de otro pais en una rueda de
+        prensa de un ministerio.
+    Paso de verdad, en un solo video: «a rented red sports car with a paper
+    dealer plate» salio con unas letras inventadas en la matricula en tres
+    planos, «a handwritten price card» con un precio inventado, y «a pair of
+    headphones» con unos auriculares colgados del cuello de quien no los
+    llevaba.
 
 BEATS — el guion en su contexto
 Un beat es un TRAMO de bloques consecutivos que comparten sitio, reparto y tono.
@@ -273,10 +260,18 @@ Aqui es donde se lee el guion entero y no frase a frase: 'desde' y 'hasta' son
 ids de bloque, y todo lo que caiga dentro hereda ese set, ese reparto y ese tono.
 Cubre el guion ENTERO, sin huecos y sin solaparte.
 
-  - 'tono' importa mas de lo que parece. Por defecto los personajes se dibujan
-    serios, con la sonrisa prohibida en el negativo del prompt; la unica forma
-    de que en una fiesta la gente sonria es que el beat diga que el tono es
-    alegre. Los tonos son: alegre, neutro, tenso, triste, solemne.
+  - 'tono' importa mas de lo que parece: es la cara que pone la gente de ese
+    tramo, y se elige por LO QUE LE PASA A QUIEN SALE, no por lo serio que sea
+    el tema del video. Un video sobre un fraude tiene tramos alegres (el dinero
+    entrando, la fiesta) y tramos tristes (las victimas). Los tonos son:
+      · alegre  algo bueno para quien sale: le sale bien, consigue algo,
+                celebra, se reencuentra. Sonrisas claras.
+      · neutro  la vida corriente: alguien trabajando, explicando, escuchando o
+                mirando. Caras relajadas y naturales, que pueden sonreir un poco
+                si el momento es cordial. NO es una cara seria.
+      · tenso   solo con amenaza de verdad, no con «un tema serio».
+      · triste  algo malo para quien sale: pierde, no le llega, se queda sin algo.
+      · solemne un momento grave o ceremonial.
   - 'accion' es lo que se VE en ese tramo, en una linea, y es una IDEA VISUAL
     propia: dos tramos seguidos no pueden compartirla, aunque compartan sitio.
     Cuando la narracion se pone abstracta -- una cifra, una comparacion, un
@@ -344,35 +339,6 @@ DEVUELVE EXACTAMENTE ESTE JSON, sin nada alrededor:
       "descripcion": "<que sitio es, en ingles>",
       "palabras": ["<palabras del guion que lo delatan>", "..."],
       "luz": "<hora del dia y fuente de luz, en ingles>"
-    }}
-  }},
-  "componentes": {{
-    "<id del mapa: 'mapa_ruta'>": {{
-      "tipo": "mapa",
-      "palabras": ["<palabras del guion que piden este mapa>", "..."],
-      "config": {{
-        "region": "<una de las regiones dibujables>",
-        "origen": {{"nombre": "<ROTULO>", "coord": [<lat>, <lon>]}},
-        "destino": {{"nombre": "<ROTULO>", "coord": [<lat>, <lon>]}}
-      }}
-    }}
-  }},
-  "lugares": {{
-    "<palabra del guion>": "<ROTULO EN PANTALLA>"
-  }},
-  "reales": [
-    {{
-      "id": "<identificador: 'sede_central', 'pentagono', 'boeing_737'>",
-      "tipo": "logo|lugar|objeto|persona",
-      "buscar": "<como se llama en Wikimedia Commons, EN INGLES y sin ambiguedad: 'Sede Central', 'The Pentagon', 'Boeing 737-800'>",
-      "que_es": "<que es, en ingles y en pocas palabras: 'the bank', 'the building'>",
-      "palabras": ["<como lo nombra el guion, EN SU IDIOMA>", "..."]
-    }}
-  ],
-  "capitulos": {{
-    "<id de bloque donde abre el capitulo>": {{
-      "titulo": "<titulo del capitulo>",
-      "subtitulo": "<opcional>"
     }}
   }},
   "beats": [
@@ -669,7 +635,9 @@ def _limpiar(datos, ids_bloque):
             "desde": desde, "hasta": hasta,
             "set": set_nombre,
             "personajes": personajes,
-            "tono": str(ficha.get("tono") or "neutro").strip().lower(),
+            # sin tildes ni mayusculas, que es como los busca la tabla de caras
+            # (p6_assets.TONOS): «Alegre» o «Tensó» caerian al neutro sin decirlo
+            "tono": _identificador(ficha.get("tono") or "neutro") or "neutro",
             "accion": str(ficha.get("accion") or "").strip(),
             # p6 empareja por palabras cuando un beat no trae rango; los nuestros
             # SI lo traen, pero se deja la clave para no romper el emparejado
@@ -763,6 +731,14 @@ def _limpiar(datos, ids_bloque):
             # lo que existe de verdad y hay que ensenar en vez de imaginar; de
             # aqui salen las imagenes que se bajan de Commons (pasos/wikimedia.py)
             "reales": _limpiar_reales(datos.get("reales"), reparto, avisos),
+            # UN CATALOGO DEDUCIDO DESDE EL 01-10-2026 PIDE PLANOS SENCILLOS:
+            # escalera de cartas facil, cuadro limpio, la cara escrita en la
+            # linea y la continuidad sin arrastrar letreros ni gente (ver
+            # `p6_assets._marcar_sencillo`). Es una clave de la DECISION: un
+            # catalogo de antes no la lleva y su video se pide como se pedia, y
+            # nadie la anade a uno guardado -- eso cambiaria sus prompts y sus
+            # cartas, y se pagaria de nuevo todo lo que se rehiciera --.
+            "sencillo": True,
             "avisos": avisos,
             "cobertura": round(len(cubiertos) / max(1, len(ids_bloque)), 3)}
 

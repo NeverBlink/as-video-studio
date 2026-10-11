@@ -74,10 +74,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import medios  # noqa: E402
 
 try:
-    from . import cli_claude, estadisticas
+    from . import cli_claude, comun, estadisticas, subtitulos
 except ImportError:  # ejecutado con la carpeta pasos directamente en sys.path
     import cli_claude
+    import comun
     import estadisticas
+    import subtitulos
 
 PASO = "direccion"
 
@@ -264,6 +266,12 @@ tres formas en las que el modelo de imagen escribe mal:
   topónimos, títulos de obras reales--, que se escriben como se escriben en el
   mundo real y no se traducen.
 
+- COMO SE ESCRIBE, NO COMO SE DICE. La frase de cada plano esta escrita para
+  la voz, con todo en letra: «dos mil veintisiete», «trescientos treinta y dos
+  mil millones», «la version once». En un rotulo eso va en cifras: "2027",
+  "332.000 MILLONES", "VERSION 11". Y con TODAS sus letras, tambien en
+  mayusculas: "AÑOS" y no "ANOS", "SUSCRIPCIÓN" y no "SUSCRIPCION". Paso en
+  un video real: tres planos rotulados "3 ANOS" y "ANO 1" que hubo que rehacer.
 - CORTO: diez palabras como mucho, y lo normal son tres o cuatro. Nada de
   parrafos, listas densas ni letra pequena.
 - GRANDE: que se lea de un vistazo, ocupando parte real del cuadro. Si algo no
@@ -344,21 +352,7 @@ juntas, mirada dura») en ocho de los diecinueve tramos con gente, y `alegre` en
 NINGUNO. Resultado: una familia que puede comer un mes entero con cinco gramos
 de oro salia con cara de enfado, y unos obreros haciendo su trabajo tambien.
 
-TODO PLANO EN EL QUE SALGA GENTE ACABA CON SU TONO, SIEMPRE. No es opcional y
-no es «solo si cambia»: es una etiqueta mas de la linea, como el sitio. Al final,
-tal cual y entre parentesis, uno de estos cinco:
-
-    (TONO: alegre)  (TONO: neutro)  (TONO: tenso)  (TONO: triste)  (TONO: solemne)
-
-  · alegre  cuando la frase es de verdad buena para quien sale: le sale bien,
-    consigue algo, le alcanza el dinero, celebra. Es el UNICO que levanta la
-    prohibicion de sonreir, asi que sin el nadie sonrie nunca.
-  · neutro  alguien explicando, trabajando o mirando. NO es una cara de enfado.
-  · tenso   solo con amenaza de verdad, no con «un tema serio».
-  · triste  cuando la frase es mala PARA QUIEN SALE: pierde, no le llega, se
-    queda sin algo.
-  · solemne un momento grave o ceremonial.
-
+{tonos}
 POR QUE ES OBLIGATORIO Y ANTES NO LO ERA. Estaba escrito como «dilo si no es el
 del tramo», y medido el 07-09-2026 sobre 44 planos: se dijo en 3. Los otros 41
 cayeron al tono del tramo, que en ese video estaba vacio, asi que **27 de los 30
@@ -381,7 +375,7 @@ ella:
 
 Los dos pasaron de verdad y se vieron en el video montado.
 
-=====================================================================
+{sencillez}=====================================================================
 LOS PLANOS ({cuantos}, y los quiero TODOS)
 =====================================================================
 {planos}
@@ -391,6 +385,104 @@ DEVUELVE ESTE JSON:
 {{"planos": {{"<id de plano>": "<que PASA en ese plano, en ingles>"}}}}
 
 Los {cuantos} planos, ninguno menos y ninguno de mas.
+"""
+
+
+#: Los cinco tonos de siempre, tal y como los lee un video de antes. Va en su
+#: propio texto porque un catalogo sencillo le anade que la cara la escribe el
+#: director (`TONOS_SENCILLO`).
+#:
+#: Y YA NO DICE QUE SIN «ALEGRE» NADIE SONRIE (30-09-2026). Lo decia porque la
+#: regla de la casa prohibia la sonrisa por defecto; con esa regla, en un video
+#: largo 241 de 257 planos con gente salieron serios tirando a tristes. Ahora la
+#: cara sale de la escena, y el neutro es una cara relajada, no una seria.
+TONOS_CINCO = """TODO PLANO EN EL QUE SALGA GENTE ACABA CON SU TONO, SIEMPRE. No es opcional y
+no es «solo si cambia»: es una etiqueta mas de la linea, como el sitio. Al final,
+tal cual y entre parentesis, uno de estos cinco:
+
+    (TONO: alegre)  (TONO: neutro)  (TONO: tenso)  (TONO: triste)  (TONO: solemne)
+
+  · alegre  cuando la frase es de verdad buena para quien sale: le sale bien,
+    consigue algo, le alcanza el dinero, celebra, aplaude. Sonrisas claras.
+  · neutro  la vida corriente: alguien explicando, trabajando, escuchando o
+    mirando. Sale con cara relajada y natural, y puede sonreir un poco si el
+    momento es cordial. NO es una cara seria ni de enfado.
+  · tenso   solo con amenaza de verdad, no con «un tema serio».
+  · triste  cuando la frase es mala PARA QUIEN SALE: pierde, no le llega, se
+    queda sin algo.
+  · solemne un momento grave o ceremonial.
+
+El tono se elige por LO QUE LE PASA A QUIEN SALE, no por lo serio que sea el
+tema del video: un video sobre un fraude tiene tramos alegres (el dinero
+entrando, la fiesta) y tramos tristes (las victimas).
+"""
+
+#: EN UN CATALOGO SENCILLO, LA CARA LA ESCRIBE EL DIRECTOR (01-10-2026).
+#:
+#: Los cinco tonos se quedan, pero como RED: su frase fija solo entra en el
+#: prompt si la linea no dice la cara (`p6_assets._cara_del_plano`). Se probo
+#: el mismo dia a anadir cuatro tonos mas (picaro, euforico, asustado,
+#: enfadado) sacados de las notas de un video, y el dueno lo paro: una tabla de
+#: caras es un repertorio, y un repertorio acaba tirando de sus mismas caras en
+#: todos los videos. Lo que se quiere es que la expresion sea la de ESA escena.
+TONOS_SENCILLO = TONOS_CINCO + """
+Y ADEMAS, LA CARA LA ESCRIBES TU, EN LA LINEA. En pocas palabras y en ingles,
+la expresion de quien sale tal y como es en ESTE momento: la que pondria esa
+persona ahi, con lo que le esta pasando. Sin formulas y sin caras de
+repertorio. Quien gana algo o le sale bien lo que trama no pone la misma cara
+que quien lo pierde, quien escucha, quien grita o quien se asusta; y la vida
+corriente es una cara relajada y natural, no seria. Si en el plano hay varios,
+di la de cada uno o la del grupo.
+
+El (TONO: x) lo pones igual, al final: es la red que solo se usa si tu linea no
+dice la cara.
+"""
+
+#: MENOS COSAS DE RELLENO, MENOS FALLOS. Solo en un catalogo sencillo.
+#:
+#: Sale de un video largo (30-09-2026): 117 notas de repaso para 281 planos, y
+#: casi todo lo que no era la cara de alguien era algo que SOBRABA. Corregido
+#: con el dueno el mismo 01-10: la primera version limitaba a dos personas y
+#: dejaba las multitudes en «pocas y al fondo». Lo que sobraba eran la gente y
+#: las cosas que NADIE habia pedido, no la gente que la escena necesitaba.
+SENCILLEZ = """=====================================================================
+MENOS COSAS DE RELLENO, MENOS FALLOS
+=====================================================================
+
+El generador se equivoca en proporcion a lo que hay en el cuadro, y cada error
+es una nota del repaso y una imagen que se paga dos veces. En un video largo
+hubo 117 notas para 281 planos, y casi todo lo que no era la cara de alguien
+era algo que SOBRABA: nadie lo habia pedido. Asi que:
+
+  · UNA IDEA POR PLANO, con un protagonista claro (que puede ser un grupo).
+  · NADIE DE RELLENO. Si la frase no pide gente, no la pongas para dar vida: ni
+    transeuntes, ni «dos mas al fondo». Paso: dos espectadores al fondo de un
+    cine y tres monigotes haciendo cola en un diagrama, que hubo que quitar.
+  · PERO SI LA ESCENA PIDE GENTE, QUE LA HAYA. Hasta unas diez personas
+    dibujadas con detalle, y una multitud (un publico, una sala de ventas, una
+    cola, una manifestacion) cuando la frase va de ella: los de delante con
+    detalle y el resto, cuanto mas al fondo, mas simples y sin nada en las
+    manos. Lo que salio mal en las multitudes fue el detalle, no el numero.
+  · CADA OBJETO, UNA VEZ, salvo que la escena pida varios. «Cinco
+    nominaciones» es una estatuilla o el numero escrito, no cinco en fila. Paso:
+    cinco estatuillas; dos telefonos donde hacia falta uno.
+  · LOS OBJETOS QUE LA ESCENA NECESITA, y ninguno de adorno.
+  · NADA QUE LLEVE LETRAS O CIFRAS SI NO DICES QUE PONE: carteles, placas,
+    matriculas, precios, fechas, sellos, etiquetas, pantallas, periodicos. Y
+    ninguna bandera sin decir de que pais. Paso: la bandera de otro pais en una
+    rueda de prensa de un ministerio; una matricula con unas letras que nadie
+    pidio en un deportivo; un precio inventado en un escaparate; una fecha
+    inventada en un aviso. Si hace falta la fecha de hoy, es <HOY>.
+  · EVITA LO QUE EL GENERADOR DIBUJA MAL: cables y cordones (sale uno doble),
+    gente sentada tras una mesa vista desde arriba (la atraviesa), manos
+    sujetando cosas pequenas, reflejos, pilas de papeles.
+  · LA GENTE, ENTERA: nadie fundido con los muebles ni atravesandolos.
+  · DOS PERSONAS EN EL MISMO PLANO SE DISTINGUEN. Si una no es del reparto, di
+    en que se diferencia (pelo, ropa). Paso: el protagonista y su socio
+    salieron gemelos, y el protagonista dos veces en el mismo despacho.
+  · ESCRIBE LO JUSTO: si una linea pasa de cuarenta palabras, casi seguro
+    describe cosas que sobran.
+
 """
 
 
@@ -522,17 +614,44 @@ def dirigible(escena):
     return True
 
 
+#: El tono que cierra una linea, entero. Ver `_TONO_ESCRITO`, que lo busca en
+#: cualquier sitio; este solo reconoce el del FINAL, que es donde se pide.
+_TONO_AL_FINAL = re.compile(r"\s*\(\s*TONO\s*:[^()]*\)\s*$", re.I)
+
+#: Lo que se le anade a un plano que ensena papel, carteles o pantallas sin
+#: decir que pone. Ver `sin_texto_pedido`. Es una frase FIJA porque
+#: `limpiar_linea` la reconoce al final y no la cuenta en el tope: la anade el
+#: codigo, no el director, y recortarla dejaria media instruccion.
+SIN_LETRAS = ("Any paper, sign or screen in this shot carries no legible "
+              "writing: at most wavy scribble lines.")
+
+
 def limpiar_linea(texto):
     """Una direccion aceptable, o (None, motivo).
 
     Recorta por PALABRAS enteras y nunca a media palabra: una frase cortada por
     la mitad llega al modelo de imagen como una instruccion rota, y eso se ve en
     la imagen. Es la misma regla que las cartelas.
+
+    Y EL TONO NO SE RECORTA. Va al final --asi se pide-- y el tope contaba sus
+    palabras como las demas, asi que la linea que llegaba justa lo perdia: en un
+    video largo (28-09-2026) una linea acabo en «(TONO» a medias, el plano se
+    quedo sin su tono y el prompt con media etiqueta. Ahora el tono y
+    `SIN_LETRAS` se apartan antes de contar y vuelven detras. Una linea que ya
+    cabia sale exactamente igual que antes.
     """
     crudo = " ".join(str(texto or "").split())
     crudo = re.sub(r'^["\'`]+|["\'`]+$', "", crudo).strip()
     if not crudo:
         return None, "vacia"
+    colas = []
+    casa = _TONO_AL_FINAL.search(crudo)
+    if casa:
+        colas.insert(0, casa.group(0).strip())
+        crudo = crudo[:casa.start()].rstrip()
+    if crudo.endswith(SIN_LETRAS):
+        colas.insert(0, SIN_LETRAS)
+        crudo = crudo[:-len(SIN_LETRAS)].rstrip()
     palabras = crudo.split()
     if len(palabras) < PALABRAS_MINIMAS:
         return None, f"solo {len(palabras)} palabra(s): no dice nada que dibujar"
@@ -541,7 +660,148 @@ def limpiar_linea(texto):
         crudo = " ".join(palabras[:PALABRAS_MAXIMAS]).rstrip(",;:")
         aviso = (f"{len(palabras)} palabras, se recorta a {PALABRAS_MAXIMAS}: "
                  f"a partir de ahi vuelve a describir el sitio")
-    return crudo, aviso
+    return " ".join([crudo] + colas), aviso
+
+
+# --------------------------------------------------------- lo que va escrito
+
+#: Superficies que el generador rellena de letras si nadie le dice que ponen.
+#: Van por PALABRA entera: «screen» si, «screening» no. Sin «board», «display»
+#: ni «sign» a secas, que en las lineas de verdad eran una placa base, un
+#: expositor de tienda y un signo menos: medido sobre las 270 lineas de un
+#: video largo, eran la mitad de los avisos que sobraban.
+_SUPERFICIES = re.compile(
+    r"\b(note|notes|sheet|sheets|paper|papers|notice|notices|"
+    r"signboard|poster|posters|placard|placards|banner|banners|label|labels|"
+    r"sticker|stickers|document|documents|page|pages|receipt|receipts|"
+    r"invoice|invoices|ticket|tickets|calendar|calendars|newspaper|"
+    r"newspapers|headline|headlines|screen|screens|monitor|monitors|"
+    r"billboard|billboards|whiteboard|blackboard|chalkboard|"
+    r"noticeboard|noticeboards|leaflet|leaflets|brochure|"
+    r"brochures|flyer|flyers|envelope|envelopes)\b", re.I)
+
+#: Y las formas de decir que no pone nada, que el director ya usa.
+_SIN_TEXTO_DICHO = re.compile(
+    r"no (legible )?(text|lettering|writing|words|letters)|nothing (legible|"
+    r"written|else|on it)|illegible|unreadable|blank|scribble|wavy|blurred|"
+    r"blurry|no legible|empty", re.I)
+
+
+def sin_texto_pedido(linea):
+    """Si el plano ensena donde escribir y no dice ni que pone ni que nada.
+
+    Es la regla 2 del encargo --«o dices QUE PONE, entrecomillado, o dices que
+    NO pone nada»-- comprobada en vez de pedida. En un video largo (28-09-2026)
+    dos planos seguidos describian «a small typed sheet» y «the new sheet» sin
+    decir que ponia; el generador escribio ahi la narracion tal cual, «dos mil
+    veintisiete» con letras, y hubo que rehacerlos los dos.
+    """
+    linea = str(linea or "")
+    if '"' in linea or "“" in linea or "«" in linea:
+        return False          # algo pone, y lo dice entre comillas
+    return bool(_SUPERFICIES.search(linea)) and not _SIN_TEXTO_DICHO.search(linea)
+
+
+def _antes_del_tono(linea, frase):
+    """Pega `frase` al final de la linea pero DELANTE de su «(TONO: x)».
+
+    El orden importa: `limpiar_linea` aparta las dos colas en ese orden --
+    primero el tono, luego SIN_LETRAS -- y si llegaran al reves la frase fija
+    contaria como palabras del director y el tope la recortaria.
+    """
+    linea = str(linea or "").rstrip()
+    casa = _TONO_AL_FINAL.search(linea)
+    cuerpo, tono = (linea[:casa.start()].rstrip(), casa.group(0).strip()) \
+        if casa else (linea, "")
+    if not cuerpo.endswith((".", "!", "?")):
+        cuerpo += "."
+    return " ".join(x for x in (cuerpo, frase, tono) if x)
+
+
+def vocabulario_de(escenas):
+    """Las palabras del video CON sus tildes, por su forma sin ellas.
+
+    -> {forma_plegada: forma_con_tildes}. Solo las que no dejan duda: si la
+    narracion usa «esta» y «está», la forma plegada tiene dos lecturas y no
+    entra. Sale de la NARRACION de este video, asi que vale para cualquier
+    idioma y no envejece con una lista.
+    """
+    formas = {}
+    for escena in escenas or []:
+        for palabra in re.findall(r"[^\W\d_]+", str((escena or {}).get("narracion") or "")):
+            baja = palabra.lower()
+            formas.setdefault(_plegar(baja), set()).add(baja)
+    return {plegada: next(iter(juntas)) for plegada, juntas in formas.items()
+            if len(juntas) == 1 and next(iter(juntas)) != plegada}
+
+
+def _plegar(palabra):
+    """«años» -> «anos», «Cancún» -> «cancun». La ñ tambien se pliega: es lo
+    que el director escribe cuando la pierde."""
+    import unicodedata                                         # noqa: PLC0415
+    return "".join(c for c in unicodedata.normalize("NFKD", palabra)
+                   if not unicodedata.combining(c))
+
+
+def _con_su_caja(modelo, correcta):
+    """La palabra corregida con las mayusculas de como venia escrita."""
+    if modelo.isupper() and len(modelo) > 1:
+        return correcta.upper()
+    if modelo[:1].isupper():
+        return correcta[:1].upper() + correcta[1:]
+    return correcta
+
+
+def pulir_rotulos(linea, idioma="", vocabulario=None):
+    """Lo que va ENTRE COMILLAS, escrito como se escribe. -> (linea, cambios)
+
+    Dos cosas, y las dos salieron de un video largo (28-09-2026):
+
+      · LAS TILDES Y LA Ñ. El director escribia «3 ANOS», «ANO 1», «ANO 2»: el
+        encargo va sin tildes por costumbre del repo y en mayusculas se le
+        caia la ñ. El generador dibuja lo que va entre comillas tal cual, y
+        hubo que rehacer tres planos para que pusiera AÑOS. Se reponen con la
+        lista de faltas seguras (`comun.SIN_TILDE_ES`) y con el vocabulario de
+        la propia narracion (`vocabulario_de`).
+      · LAS CIFRAS EN CIFRA. La narracion esta escrita para la voz, con letras;
+        un rotulo que la copia dice «DOS MIL VEINTISIETE». Se convierte con la
+        MISMA cuenta que los subtitulos (`subtitulos.limpiar_texto`).
+
+    Solo dentro de las comillas: el resto de la linea es el encargo en ingles.
+    Y se hace al DECIDIR la direccion, no al armar el prompt: las lineas ya
+    guardadas no cambian, asi que ningun plano hecho cambia de prompt.
+    """
+    codigo = (re.findall(r"\b([a-z]{2})\b", str(idioma or "").lower()) or [""])[-1]
+    vocabulario = vocabulario or {}
+    cambios = []
+
+    def pule(casa):
+        abre, texto, cierra = casa.group(1), casa.group(2), casa.group(3)
+        nuevo = texto
+        # SOLO SI NO HAY YA CIFRAS: lo que viene en numero ya esta escrito como
+        # se escribe, y la cuenta de los subtitulos, que lee palabras dichas,
+        # lo estropea -- «427.000 $» salia «427 $» en una linea de verdad --.
+        if codigo in ("es", "en") and not re.search(r"\d", texto):
+            try:
+                nuevo = subtitulos.limpiar_texto(nuevo.split(), codigo) or nuevo
+            except Exception:                                  # noqa: BLE001
+                pass
+        if codigo == "es":
+            nuevo, _ = comun.reponer_tildes(nuevo, "es")
+
+        def repone(palabra):
+            original = palabra.group(0)
+            correcta = vocabulario.get(original.lower())
+            return _con_su_caja(original, correcta) if correcta else original
+
+        nuevo = re.sub(r"[^\W\d_]+", repone, nuevo)
+        if nuevo != texto:
+            cambios.append((texto, nuevo))
+        return f"{abre}{nuevo}{cierra}"
+
+    pulida = re.sub(r'(")([^"]{1,120})(")', pule, str(linea or ""))
+    pulida = re.sub(r"(“)([^”]{1,120})(”)", pule, pulida)
+    return pulida, cambios
 
 
 def _limpiar(crudo, ids):
@@ -567,6 +827,31 @@ def _limpiar(crudo, ids):
         avisos.append(f"{len(faltan)} plano(s) se han quedado sin direccion: "
                       + ", ".join(faltan[:8]))
     return salida, avisos
+
+
+def sin_dirigir(escenas, plan):
+    """Planos que van a pagar imagen SIN direccion en un video que se dirigio.
+
+    -> [ids]. Vacio si el video no se dirigio nunca: la direccion es opcional,
+    y un video sin ella se arma como siempre (ver cabecera).
+
+    EL FALLO QUE MIDE (un video largo, 28-09-2026). El plan cambio DESPUES de
+    dirigirlo -- cinco cartelas se perdieron y sus tramos volvieron a ser diez
+    planos -- y esos diez se generaron con la accion del tramo, en el idioma del
+    guion y compartida con sus vecinos. Uno salio con esa accion pintada como
+    texto encima de una pila de billetes. Nadie se nego a generar: el paso da la
+    direccion por opcional plano a plano, y aqui eso ya no era verdad.
+    """
+    plan = plan or {}
+    dirigibles = [e for e in (escenas or [])
+                  if isinstance(e, dict) and e.get("id") and dirigible(e)]
+
+    def tiene(escena):
+        return bool(" ".join(str(plan.get(escena["id"]) or "").split()))
+
+    if not any(tiene(e) for e in dirigibles):
+        return []
+    return [e["id"] for e in dirigibles if not tiene(e)]
 
 
 def repetidas(plan, escenas):
@@ -674,6 +959,8 @@ def proponer(escenas, ajuste=None, avisar=None, proyecto_id=None, cwd=None,
             f"repita al de al lado, con {modelo} (esfuerzo {esfuerzo})")
         avance.arrancar()
 
+    sencillo = bool((catalogo or {}).get("sencillo")) if isinstance(
+        catalogo, dict) else False
     instruccion = INSTRUCCION.format(
         titulo=titulo or "sin titulo",
         palabras_maximas=PALABRAS_MAXIMAS,
@@ -685,6 +972,11 @@ def proponer(escenas, ajuste=None, avisar=None, proyecto_id=None, cwd=None,
         sitios=_sitios_legibles(catalogo, dirigibles),
         reparto=_reparto_legible(catalogo, dirigibles),
         cuantos=len(dirigibles),
+        # UN CATALOGO SENCILLO trae la cara escrita en la linea y la seccion
+        # de planos sencillos; uno de antes, lo de siempre
+        tonos=TONOS_SENCILLO if sencillo else TONOS_CINCO,
+        sencillez=(SENCILLEZ.replace("<HOY>", time.strftime("%d/%m/%Y"))
+                   if sencillo else ""),
         planos=_planos_legibles(dirigibles, [b for _, b in pares]))
 
     arranque = time.time()
@@ -699,6 +991,30 @@ def proponer(escenas, ajuste=None, avisar=None, proyecto_id=None, cwd=None,
     segundos = avance.parar() if avance is not None else time.time() - arranque
 
     plan, avisos = _limpiar(crudo, {e["id"] for e in dirigibles})
+    # LO QUE VA ESCRITO EN EL DIBUJO, repasado antes de guardarlo: rotulos con
+    # sus tildes y sus cifras, y ninguna superficie con letras sin decir cuales
+    # (ver `pulir_rotulos` y `sin_texto_pedido`). Se hace aqui, en la
+    # DECISION, y no al armar el prompt: asi no cambia ni un prompt de los
+    # videos que ya estan hechos.
+    vocabulario = vocabulario_de(todos)
+    retocados, callados = [], []
+    for sid in sorted(plan):
+        linea, cambios = pulir_rotulos(plan[sid], idioma, vocabulario)
+        retocados.extend(cambios)
+        if sin_texto_pedido(linea):
+            linea = _antes_del_tono(linea, SIN_LETRAS)
+            callados.append(sid)
+        plan[sid] = linea
+    if retocados:
+        muestra = list(dict.fromkeys(f"«{a}» -> «{b}»" for a, b in retocados))
+        avisos.append(f"{len(retocados)} rotulo(s) reescritos como se escriben "
+                      f"(tildes, eñes y cifras): " + ", ".join(muestra[:6])
+                      + (" …" if len(muestra) > 6 else ""))
+    if callados:
+        avisos.append(f"{len(callados)} plano(s) ensenan papel, carteles o "
+                      f"pantallas sin decir que pone: se les pide que no lleven "
+                      f"letra legible ({', '.join(callados[:8])}"
+                      + ("…" if len(callados) > 8 else "") + ")")
     for grupo in repetidas(plan, dirigibles):
         avisos.append(f"{' = '.join(grupo)}: misma direccion en varios planos, "
                       f"que es justo lo que esto viene a quitar -- vuelve a "

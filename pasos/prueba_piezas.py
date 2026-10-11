@@ -49,6 +49,7 @@ import catalogo_visual  # noqa: E402
 import cli_claude  # noqa: E402
 import comun  # noqa: E402
 import direccion  # noqa: E402
+import encuadres  # noqa: E402
 import redactor  # noqa: E402
 import estilo  # noqa: E402
 import medios  # noqa: E402
@@ -2023,7 +2024,7 @@ def prueba_redactor():
                {"id": "S002", "personajes": ["b"]}]
     igual(redactor.sin_declarar(plan, escenas), ["S001"],
           "un plano con gente que no declara la expresion se caza aqui: sin "
-          "ella la sonrisa esta prohibida y nadie sonrie nunca")
+          "ella la cara no sale de la escena")
     igual(redactor.repetidos({"S001": {"prompt": "el mismo"},
                               "S002": {"prompt": "El mismo."}}, escenas),
           [["S001", "S002"]], "dos planos con el mismo prompt se cantan")
@@ -2184,7 +2185,12 @@ def prueba_la_cara_es_de_esa_escena():
                              [{"id": "S1", "personajes": ["a"]}]), ["S1"],
           "y un tono que no esta en la tabla cuenta como no declarado: "
           "`_tono_de` no lo reconoce, asi que no llegaria al prompt")
-    ok("(TONO:" in direccion.INSTRUCCION
+    # la tabla de tonos va en su propio texto desde el 01-10 (la de siempre
+    # para un catalogo de antes, y con la cara escrita en la linea para uno
+    # sencillo) y entra en el encargo por `{tonos}`: se mira en las dos
+    ok("{tonos}" in direccion.INSTRUCCION
+       and all("(TONO:" in t and "SIEMPRE" in t
+               for t in (direccion.TONOS_CINCO, direccion.TONOS_SENCILLO))
        and "OBLIGATORIO" in direccion.INSTRUCCION.upper(),
        "y el encargo ya no lo pide «si cambia», lo pide siempre")
 
@@ -2350,6 +2356,289 @@ def prueba_rehacer_de_verdad():
 
     ok("rehacer" in p6_assets.OPCIONES_EJECUCION,
        "y la opcion viaja por invocacion, sin tocar la firma del paso")
+    shutil.rmtree(base, ignore_errors=True)
+
+
+def prueba_pasada_fallida_no_repaga():
+    """Lo que una pasada fallida ya dibujo no se paga otra vez.
+
+    EL FALLO (05-10-2026). Una tanda rehacia tres planos con nota. Uno lo
+    rechazaba siempre el filtro de OpenAI, el paso no se sellaba, y los otros
+    dos se pagaban en cada intento: la cache no los encontraba porque su
+    «rechazada» era el dibujo NUEVO de `trabajo/` y el corrector reescribia el
+    prompt cada vez. Cada «Montar video» cobraba imagenes y no montaba nada.
+
+    Se reproduce con dos sitios (dos cadenas): S001 lleva nota y sale bien, y
+    S002 lo rechaza el filtro siempre --tambien sin la cita de la narracion--.
+    El corrector de mentira da un texto distinto en cada llamada, como el de
+    verdad. Es la prueba que pasa por `_generar_escenas` de punta a punta: con
+    el comportamiento de antes, S001 se paga dos veces y falla justo ahi.
+    """
+    titulo("pasada fallida: lo dibujado con la misma peticion no se repaga")
+    base = os.path.join(os.environ.get("TEMP", "."), "estudio_prueba_fallida")
+    shutil.rmtree(base, ignore_errors=True)
+    trabajo = os.path.join(base, "trabajo")
+    dirs = {"escenas": os.path.join(trabajo, "escenas"),
+            "componentes": os.path.join(trabajo, "assets", "componentes"),
+            "cache": os.path.join(trabajo, "_refs")}
+    for ruta in dirs.values():
+        os.makedirs(ruta, exist_ok=True)
+    banco = os.path.join(base, "banco_imagenes")
+    os.makedirs(banco, exist_ok=True)
+    estilo_png = os.path.join(base, "estilo.png")
+    Image.new("RGB", (32, 32), color=(10, 20, 30)).save(estilo_png)
+    # las imagenes de antes de la nota, como en el video: el plano YA existe
+    for sid in ("S001", "S002"):
+        Image.new("RGB", (32, 32), color=(90, 90, 90)).save(
+            os.path.join(dirs["escenas"], f"{sid}.png"))
+
+    escenas = [
+        {"id": "S001", "set": "juguetes", "narracion": "Los ninos quieren los munecos.",
+         "t_in": 0.0, "t_out": 3.0, "prompt": "un nino con un muneco",
+         "personajes": []},
+        {"id": "S002", "set": "almacen", "narracion": "Para el estudio no valia nada.",
+         "t_in": 3.0, "t_out": 6.0, "prompt": "RECHAZAME dos ejecutivos",
+         "personajes": []},
+    ]
+    plan = {"escenas": escenas, "dependencias": {}, "idioma": "es",
+            "formato": None, "assets": {}}
+    p = dict(p6_assets.PARAMS_POR_DEFECTO)
+    p.update({"banco_imagenes": banco, "motor_imagen": "openai",
+              "calidad": "low", "imagenes_previas": [], "cadenas": 2,
+              "unidades": {"escena:S001": {"feedback": "mas cartoon"},
+                           "escena:S002": {"feedback": "estos munecos"}}})
+
+    llamadas, rechazos = [], []
+
+    class MotorFalso:
+        @staticmethod
+        def generar(prompt, referencias, quality="low", tamano="apaisado"):
+            if "RECHAZAME" in prompt:
+                rechazos.append(prompt)
+                raise RuntimeError("HTTP 400: Your request was rejected by the "
+                                   "safety system.")
+            llamadas.append(prompt)
+            crudo = io.BytesIO()
+            Image.new("RGB", (32, 32),
+                      color=(len(llamadas) * 40 % 256, 0, 0)).save(crudo, "PNG")
+            return crudo.getvalue(), {"coste": 0.05, "segundos": 1.0}
+
+    correcciones = []
+
+    def corrector_falso(escena, *_args, **_kwargs):
+        correcciones.append(escena["id"])
+        return {"escena": f"{escena['prompt']} (version {len(correcciones)})",
+                "personajes": [], "referencias": []}
+
+    def referencias_falsas(escena, _plan, dirs_, _p, _cache, _previas,
+                           anteriores=None, notas=None):
+        refs = [{"papel": "estilo", "ruta": estilo_png}]
+        propia = os.path.join(dirs_["escenas"], f"{escena['id']}.png")
+        if os.path.exists(propia):
+            refs.append({"papel": "rechazada", "ruta": propia})
+        return refs
+
+    def pasada(unidades, forzar=False):
+        resultados = {}
+        try:
+            p6_assets._generar_escenas(plan, dirs, p, trabajo, lambda _u: True,
+                                       unidades, resultados, lambda *_a: None,
+                                       forzar=forzar)
+            return resultados, None
+        except RuntimeError as fallo:
+            return resultados, str(fallo)
+
+    # el prompt de mentira lleva la cita de la narracion igual que el de verdad:
+    # asi S002 recorre tambien el reintento sin ella antes de dar el error
+    sustituidas = {
+        "_referencias_escena": referencias_falsas,
+        "_referencias_estilo": lambda *_a, **_k: [{"papel": "estilo",
+                                                   "ruta": estilo_png}],
+        "_corregir_con_agente": corrector_falso,
+        "_prompt_completo": (lambda escena, referencias, estilo, feedback="", **_k:
+                             f"{escena['prompt']} "
+                             f"{p6_assets._frase_narracion(escena)} | nota: {feedback}"),
+    }
+    originales = {nombre: getattr(p6_assets, nombre) for nombre in sustituidas}
+    motor_original = medios.motor
+    medios.motor = lambda ruta: (MotorFalso if "imagen" in ruta
+                                 else motor_original(ruta))
+    for nombre, funcion in sustituidas.items():
+        setattr(p6_assets, nombre, funcion)
+    ambas = ["escena:S001", "escena:S002"]
+    try:
+        # 1. LA PRIMERA PASADA: S001 se paga, S002 tumba el paso
+        resultados, error = pasada(ambas)
+        ok(error and error.startswith("S002"),
+           f"la pasada falla por S002, y el error dice que plano es: {error}")
+        ok(error and "tambien sin la cita" in error and len(rechazos) == 2,
+           "despues de reintentarlo una vez sin la cita de la narracion")
+        igual(len(llamadas), 1, "S001 se ha pagado una vez")
+        ficha = medios.leer_json(os.path.join(dirs["escenas"], "S001.json"), {})
+        ok(ficha.get("peticion"), "y su ficha dice que se le pidio")
+
+        # 2. LA SEGUNDA, con el paso sin sellar: S001 se queda
+        resultados, error = pasada(ambas)
+        ok(error and error.startswith("S002"), "S002 vuelve a fallar")
+        igual(len(llamadas), 1,
+              "S001 NO se paga otra vez: se le pide lo mismo que ya tiene")
+        igual(correcciones.count("S001"), 1,
+              "ni se vuelve a llamar al corrector por el")
+        ok((resultados.get("escena:S001") or {}).get("reaprovechada"),
+           "y el resultado dice que se ha reaprovechado")
+        igual((resultados.get("escena:S001") or {}).get("origen"), "conservado",
+              "como un plano conservado, que es lo que es")
+
+        # 3. EL «REHACER» DE LA PANTALLA SI PAGA: ese pide otra a proposito
+        resultados, error = pasada(["escena:S001"], forzar=True)
+        igual(error, None, "rehaciendo solo S001, la pasada termina")
+        igual(len(llamadas), 2, "y con rehacer se paga una imagen nueva")
+
+        # 4. UNA NOTA NUEVA ES OTRA PETICION
+        p["unidades"]["escena:S001"] = {"feedback": "ahora en blanco y negro"}
+        resultados, error = pasada(["escena:S001"])
+        igual(len(llamadas), 3, "con la nota cambiada, se dibuja de nuevo")
+        ok(not (resultados.get("escena:S001") or {}).get("reaprovechada"),
+           "y no se da por reaprovechada")
+
+        # 5. UNA FICHA DE ANTES (sin peticion) NO SE REAPROVECHA: lo de siempre
+        ruta = os.path.join(dirs["escenas"], "S001.json")
+        vieja = medios.leer_json(ruta, {})
+        vieja.pop("peticion", None)
+        medios.escribir_json(ruta, vieja)
+        resultados, error = pasada(["escena:S001"])
+        igual(len(llamadas), 4,
+              "una ficha sin peticion se comporta como hasta ahora")
+    finally:
+        medios.motor = motor_original
+        for nombre, funcion in originales.items():
+            setattr(p6_assets, nombre, funcion)
+    shutil.rmtree(base, ignore_errors=True)
+
+
+def prueba_reintento_sin_la_cita():
+    """Un plano que el filtro de seguridad rechaza se reintenta SIN la cita.
+
+    EL FALLO (01-10-2026, un video sobre negocios del espectaculo). Dos tandas
+    murieron tras una hora por un solo plano cada una: «Your request was
+    rejected by the safety system» (HTTP 400). La direccion ya evitaba a
+    proposito los nombres con derechos («una silueta de raton de orejas
+    redondas»), pero la narracion se cita LITERAL en el prompt
+    (`_con_narracion`), y ahi iban los nombres. Y el error solo traia el texto de
+    OpenAI: no decia que plano era, en una tanda de trescientos.
+
+    El arreglo: un reintento, uno, sin la cita; la firma y la cache, las del
+    prompt de verdad; y si tambien se rechaza, o no hay prompt sin cita, el
+    error empieza por el nombre del plano. Todo con un motor de mentira.
+    """
+    titulo("filtro de seguridad: la cita se quita entera, y solo ella")
+    escena = {"id": "S004", "narracion": "Una saga de cine con un raton famoso.",
+              "luz": "day"}
+    base_txt = "a round-eared mouse silhouette on a poster wall"
+    con_cita = p6_assets._con_narracion(base_txt, escena)
+    # LA PLANTILLA DE SIEMPRE, escrita aqui letra a letra: es la que esta en la
+    # cache de todas las imagenes ya pagadas, y moverla las repagaria
+    igual(con_cita,
+          base_txt + '. This shot accompanies the narration line: "Una saga de '
+          'cine con un raton famoso.". Show the specific moment that line '
+          'describes -- or, when the line is abstract (a figure, a comparison, '
+          'a concept), stage one concrete scene that makes that idea visible. '
+          'Never a generic view of the location.',
+          "la cita sale exactamente como salia: ningun prompt hecho cambia")
+    completo = p6_assets._prompt_completo(dict(escena, prompt=con_cita), [],
+                                          ESTILO_MONIGOTE, idioma="es")
+    seguro = p6_assets._prompt_sin_narracion(completo, escena)
+    ok("raton famoso" not in seguro and "narration line" not in seguro,
+       "el prompt seguro no lleva la frase narrada")
+    ok(base_txt in seguro and seguro.endswith("No watermarks."),
+       "y todo lo demas se queda")
+    igual(p6_assets._prompt_sin_narracion(completo, {"narracion": ""}), completo,
+          "sin narracion no hay nada que quitar")
+
+    titulo("filtro de seguridad: un rechazo, un reintento; dos, un error con nombre")
+    base = os.path.join(os.environ.get("TEMP", "."), "estudio_prueba_seguridad")
+    shutil.rmtree(base, ignore_errors=True)
+    banco = os.path.join(base, "banco_imagenes")
+    os.makedirs(banco, exist_ok=True)
+    referencia = os.path.join(base, "ref.png")
+    Image.new("RGB", (32, 32), color=(10, 20, 30)).save(referencia)
+    p = dict(p6_assets.PARAMS_POR_DEFECTO)
+    p.update({"banco_imagenes": banco, "motor_imagen": "openai",
+              "calidad": "low", "imagenes_previas": []})
+
+    llamadas, respuestas = [], []
+
+    def rechazo():
+        return RuntimeError('HTTP 400: {"error": {"message": "Your request was '
+                            'rejected by the safety system.", "code": '
+                            '"moderation_blocked"}}')
+
+    class MotorFalso:
+        @staticmethod
+        def generar(prompt, referencias, quality="low", tamano="apaisado"):
+            llamadas.append(prompt)
+            que = respuestas.pop(0) if respuestas else "bien"
+            if isinstance(que, Exception):
+                raise que
+            crudo = io.BytesIO()
+            Image.new("RGB", (32, 32),
+                      color=(len(llamadas) * 30 % 256, 0, 0)).save(crudo, "PNG")
+            return crudo.getvalue(), {"coste": 0.006, "segundos": 1.0}
+
+    def producir(nombre, prompt, seguro_=None):
+        try:
+            return p6_assets._producir_imagen(
+                nombre, prompt, [referencia], os.path.join(base, f"{nombre}.png"),
+                p, prompt_seguro=seguro_), None
+        except RuntimeError as fallo:
+            return None, str(fallo)
+
+    original = medios.motor
+    medios.motor = lambda ruta: (MotorFalso if "imagen" in ruta else original(ruta))
+    try:
+        meta, error = producir("S001", completo + " uno", seguro + " uno")
+        igual((len(llamadas), error), (1, None),
+              "sin rechazo, una sola llamada y nada mas")
+        ok(not meta.get("sin_cita_narracion"), "y la ficha no dice nada de citas")
+
+        del llamadas[:]
+        respuestas[:] = [rechazo()]
+        meta, error = producir("S004", completo, seguro)
+        igual(len(llamadas), 2, "un rechazo y un reintento: dos llamadas")
+        igual(llamadas[-1], seguro, "y el reintento va SIN la cita")
+        ok(meta and meta.get("sin_cita_narracion")
+           and meta.get("prompt_enviado") == seguro,
+           "la ficha dice que se genero sin la cita y con que prompt")
+        ok(meta and os.path.exists(os.path.join(banco, f"{meta['firma']}.png")),
+           "y la cache la guarda con la firma del prompt de verdad")
+        meta, error = producir("S004", completo, seguro)
+        igual((meta or {}).get("origen"), "cache",
+              "asi la pasada siguiente la encuentra y no vuelve a chocar")
+        igual(len(llamadas), 2, "sin llamar al motor")
+
+        del llamadas[:]
+        respuestas[:] = [rechazo(), rechazo()]
+        meta, error = producir("S033", completo + " dos", seguro + " dos")
+        ok(error and error.startswith("S033:") and "tambien sin la cita" in error,
+           f"dos rechazos: el error empieza por el plano y dice que lo que "
+           f"choca esta en su direccion ({(error or '')[:70]}...)")
+        igual(len(llamadas), 2, "un reintento, no dos")
+
+        del llamadas[:]
+        respuestas[:] = [rechazo()]
+        meta, error = producir("hoja_juez", "the cast sheet of a judge")
+        ok(error and error.startswith("hoja_juez:"),
+           "sin prompt sin cita (una hoja, una pieza), el error lleva el nombre")
+        igual(len(llamadas), 1, "y no se reintenta: no hay otro prompt que mandar")
+
+        del llamadas[:]
+        respuestas[:] = [RuntimeError("HTTP 500: el servidor se ha caido")]
+        meta, error = producir("S050", completo + " tres", seguro + " tres")
+        igual(error, "HTTP 500: el servidor se ha caido",
+              "cualquier otro error sube tal cual: no es un rechazo")
+        igual(len(llamadas), 1, "y sin reintento sin cita")
+    finally:
+        medios.motor = original
     shutil.rmtree(base, ignore_errors=True)
 
 
@@ -2959,6 +3248,525 @@ def prueba_direccion():
     ok(comun_con < comun_sin,
        f"dos planos del mismo sitio comparten menos prompt con direccion "
        f"({comun_con} caracteres) que sin ella ({comun_sin})")
+
+
+def prueba_lo_escrito_en_el_dibujo():
+    """Lo que va escrito dentro del dibujo, como se escribe (28-09-2026).
+
+    Del repaso de un video largo, tres errores objetivos de la direccion: el
+    tono cortado por el tope de palabras (una linea acabo en «(TONO» a medias),
+    rotulos sin ñ («3 ANOS», «ANO 1») y cifras en letra («dos mil veintisiete»
+    copiado de la narracion en una nota), y una hoja «a small typed sheet» sin
+    decir que ponia, en la que el generador escribio la narracion. Todo se
+    arregla en la DECISION, no al armar el prompt: ningun video hecho cambia.
+    """
+    titulo("lo escrito: el tono no se recorta con la linea")
+    larga = " ".join(f"w{i}" for i in range(direccion.PALABRAS_MAXIMAS + 5))
+    linea, aviso = direccion.limpiar_linea(larga + " (TONO: tenso)")
+    ok(linea.endswith("(TONO: tenso)"),
+       "una linea pasada de largo conserva su tono entero")
+    igual(len(linea.split()), direccion.PALABRAS_MAXIMAS + 2,
+          "y el tope cuenta solo las palabras del director")
+    ok("se recorta" in aviso, "y se sigue diciendo que se ha recortado")
+    con_frase = direccion._antes_del_tono(larga + " (TONO: neutro)",
+                                         direccion.SIN_LETRAS)
+    linea, _ = direccion.limpiar_linea(con_frase)
+    ok(linea.endswith(direccion.SIN_LETRAS + " (TONO: neutro)"),
+       "la frase que anade el codigo tampoco se recorta, y va delante del tono")
+    justa = "a clerk stamps a folder at the counter (TONO: neutro)"
+    igual(direccion.limpiar_linea(justa), (justa, ""),
+          "y una linea que ya cabia sale exactamente igual que antes: las ya "
+          "guardadas no cambian al volver a guardarlas")
+
+    titulo("lo escrito: lo que va entre comillas, como se escribe")
+    escenas = [{"narracion": "ordenadores de tres o cuatro años,"},
+               {"narracion": "el precio sube cada año."},
+               {"narracion": "con una suscripción, esta y está"}]
+    voc = direccion.vocabulario_de(escenas)
+    igual(voc.get("anos"), "años", "el vocabulario sale de la propia narracion")
+    ok("esta" not in voc, "y una forma con dos lecturas (esta / está) no entra")
+    pulida, cambios = direccion.pulir_rotulos(
+        'labels "3 ANOS" and "ANO 1", a sign reading "SUSCRIPCION"',
+        "español (es)", voc)
+    igual(pulida, 'labels "3 AÑOS" and "AÑO 1", a sign reading "SUSCRIPCIÓN"',
+          "la ñ y las tildes vuelven, respetando las mayusculas")
+    igual(len(cambios), 3, "y se dice cuantos rotulos se han tocado")
+    igual(direccion.pulir_rotulos('a note reading "OCTUBRE DE DOS MIL VEINTISIETE"',
+                                  "español (es)", voc)[0],
+          'a note reading "OCTUBRE DE 2027"',
+          "la cifra dicha se escribe en cifra, con la cuenta de los subtitulos")
+    igual(direccion.pulir_rotulos("the sheet has three rows and no year",
+                                  "español (es)", voc)[1], [],
+          "fuera de las comillas no se toca nada: es el encargo en ingles")
+    igual(direccion.pulir_rotulos('a till reading "427.000 $"', "español (es)",
+                                  voc)[1], [],
+          "lo que ya viene en cifras no se toca («427.000 $» salia «427 $»)")
+
+    titulo("lo escrito: papel o pantalla sin decir que pone")
+    ok(direccion.sin_texto_pedido("a small typed sheet pinned to the board"),
+       "«a small typed sheet» sin decir que pone se detecta")
+    ok(not direccion.sin_texto_pedido('a sheet reading "2027" pinned there'),
+       "si dice que pone, no")
+    ok(not direccion.sin_texto_pedido("a screen with rows of wavy scribble"),
+       "ni si ya dice que no se lee")
+    ok(not direccion.sin_texto_pedido("a motherboard lies on the bench"),
+       "ni por una palabra que solo contiene la superficie («motherboard»)")
+    ok(not direccion.sin_texto_pedido("he leans over the board with a minus sign "
+                                      "drawn next to the store display"),
+       "ni por «board», «sign» o «display», que en las lineas reales eran una "
+       "placa, un signo menos y un expositor")
+    ok("COMO SE ESCRIBE, NO COMO SE DICE" in direccion.INSTRUCCION,
+       "y el encargo ya lo pide bien de primeras")
+
+
+class _EstadoDeMentira:
+    """Lo justo de `nucleo.Estado` para `reubicar_cartelas`: params y fusion."""
+
+    def __init__(self, unidades):
+        self.unidades = json.loads(json.dumps(unidades))
+        self.llamadas = []
+
+    def params(self, paso):
+        return {"unidades": self.unidades}
+
+    def actualizar_params(self, paso, cambios, del_propio_paso=False):
+        self.llamadas.append((paso, del_propio_paso))
+        self.unidades.update(cambios.get("unidades") or {})
+
+
+def prueba_cartelas_perdidas_y_planos_sin_dirigir():
+    """Cinco cartelas perdidas y diez planos sin dirigir (28-09-2026).
+
+    El fallo mas caro del repaso de un video largo, y no lo vio nadie: la
+    cartela que se iba HACIA ATRAS dejaba su plano fundido dentro del de antes,
+    el plano fundido se retiraba al completar --y con el sus params, cartela
+    incluida--, la pasada siguiente ya no la encontraba, y sus tramos volvian a
+    ser planos que el director no habia visto y que se generaron con la accion
+    del tramo. Nada lo contaba.
+    """
+    titulo("sin dirigir: los planos que se quedan sin dirigir se ven")
+    planos = [{"id": "S1"}, {"id": "S2"}, {"id": "S3", "sigue_a": "S2"},
+              {"id": "S4", "cartela": {"plantilla": "cifra", "fondo": "negro"}}]
+    igual(direccion.sin_dirigir(planos, {}), [],
+          "un video sin dirigir no tiene planos «sin dirigir»: es opcional")
+    igual(direccion.sin_dirigir(planos, {"S1": "a hand covers the screen"}),
+          ["S2", "S4"], "en uno dirigido, los que faltan -- sin las mitades, "
+                        "que copian la imagen del hogar, y con las cartelas, "
+                        "que hoy van todas sobre la imagen de su plano")
+
+    titulo("sin dirigir: el plan lo cuenta, y el resumen del paso tambien")
+    fuente = open(os.path.join(RAIZ, "pasos", "p6_assets.py"),
+                  encoding="utf-8").read()
+    ok('informe["sin_dirigir"]' in fuente
+       and "sin dirigir en un video" in fuente,
+       "planificar apunta los planos sin dirigir y el resumen los nombra")
+
+    titulo("cartelas: la de un plano absorbido no se pierde")
+    ficha = {"plantilla": "contraste", "fondo": "imagen",
+             "ancla": "Cuando lo compras, pagas una vez y es tuyo."}
+    estado = _EstadoDeMentira({"escena:S059": {"direccion": "algo que se ve"},
+                               "escena:S060": {"cartela": ficha}})
+    plan = {"informe": {"cartelas": {"seguidas": [
+        {"cartela": "S059", "absorbido": "S060", "hacia": "atras"},
+        {"cartela": "S059", "absorbido": "S061", "hacia": "atras"}]}}}
+    igual(p6_assets.reubicar_cartelas(estado, plan), ["escena:S059"],
+          "la cartela pasa al plano que la lleva, antes de que se retire el suyo")
+    igual(estado.unidades["escena:S059"].get("cartela"), ficha,
+          "entera, con su ancla")
+    igual(estado.unidades["escena:S059"].get("direccion"), "algo que se ve",
+          "sin llevarse lo que el hogar ya tenia")
+    igual(estado.llamadas, [("assets", True)],
+          "y como descubrimiento del propio paso, no como edicion")
+    igual(p6_assets.reubicar_cartelas(estado, plan), [],
+          "si el hogar ya la tiene no se toca otra vez")
+    igual(p6_assets.reubicar_cartelas(estado, {"informe": {}}), [],
+          "y sin fundidos no hay nada que mover")
+
+    titulo("cartelas: la pasada siguiente la coloca UNA vez, por su texto")
+    # la ficha que llega al hogar sigue anclada al texto del plano absorbido, y
+    # ese plano vuelve a existir en el corte crudo de la pasada siguiente: sin
+    # la guarda la encontraban los dos -- uno por su texto y otro por su numero
+    vistos = {}
+
+    def repartir_espia(_escenas, plan_bruto, **_k):
+        vistos.clear()
+        vistos.update(plan_bruto)
+        return dict(plan_bruto), []
+
+    originales = (cartelas.ocupacion_de, cartelas.repartir,
+                  p6_assets._fundir_cartelas)
+    cartelas.ocupacion_de = lambda *_a, **_k: {}
+    cartelas.repartir = repartir_espia
+    p6_assets._fundir_cartelas = lambda *_a, **_k: []
+    try:
+        dos = [{"id": "S059", "narracion": "Antes se compraba en una tienda."},
+               {"id": "S060", "narracion": ficha["ancla"]}]
+        p6_assets._marcar_cartelas([dict(e) for e in dos], [{}, {}],
+                                   {"unidades": estado.unidades})
+        igual(sorted(vistos), ["S060"],
+              "la coloca su texto, en su plano, y no tambien el numero del hogar")
+        sin_ancla = {k: v for k, v in ficha.items() if k != "ancla"}
+        p6_assets._marcar_cartelas(
+            [dict(e) for e in dos], [{}, {}],
+            {"unidades": {"escena:S059": {"cartela": sin_ancla}}})
+        igual(sorted(vistos), ["S059"],
+              "una ficha de antes, sin ancla, sigue yendo por su numero")
+        otra = dict(ficha, ancla="Una frase que ya no se dice en este video.")
+        p6_assets._marcar_cartelas(
+            [dict(e) for e in dos], [{}, {}],
+            {"unidades": {"escena:S059": {"cartela": otra}}})
+        igual(sorted(vistos), ["S059"],
+              "y una cuya frase ya no esta en el plan, tambien: no hay otro "
+              "sitio donde ponerla")
+    finally:
+        (cartelas.ocupacion_de, cartelas.repartir,
+         p6_assets._fundir_cartelas) = originales
+
+
+def prueba_las_caras_salen_de_la_escena():
+    """La cara la decide la escena, no una prohibicion general (30-09-2026).
+
+    EL FALLO, en un video largo: «todas las personas salen siempre serias
+    tirando a tristes, nunca felices». Venia de cuatro sitios a la vez: la regla
+    de la casa prohibia sonreir por defecto (y ponia «smiling» en el negativo de
+    toda cara), el tono neutro -- el 60 % de los planos -- era «straight closed
+    mouth... No smiling», las hojas de reparto se dibujaban «neutral and
+    serious» y su gesto se copiaba en cada plano, y la lamina de estilo traia
+    personajes de muestra enfadados o tristes.
+    """
+    titulo("las caras: el neutro es relajado, los tonos oscuros siguen sin sonrisa")
+    neutro = p6_assets._expresion("neutro")
+    ok("No smiling" not in neutro and "relaxed" in neutro
+       and "slight natural smile" in neutro,
+       "el neutro es una cara relajada que puede sonreir un poco, no una seria")
+    ok("Not stern" in neutro and "not sad" in neutro,
+       "y dice expresamente que no es seria ni triste")
+    for tono in ("tenso", "triste", "solemne"):
+        ok("No smiling" in p6_assets._expresion(tono),
+           f"«{tono}» sigue prohibiendo la sonrisa: ahi el generador la necesita")
+    ok("REQUIRED" in p6_assets._expresion("alegre"), "y «alegre» la exige")
+    igual(p6_assets._expresion("desconocido"), neutro,
+          "un tono que no esta en la tabla cae al neutro, que ya no es serio")
+
+    titulo("las caras: las reglas de la casa ya no prohiben sonreir")
+    reglas = medios.motor("reglas/reglas.py")
+    igual(os.path.basename(reglas.RUTA), "reglas_casa.json",
+          "se leen de reglas_casa.json, que es el fichero que llega al actualizar")
+    imagen = reglas.bloque_prompt("prompt_imagen")
+    ok("PROHIBIDA" not in imagen and "SALE DE LO QUE PASA EN ESE PLANO" in imagen,
+       "la regla de la expresion la saca de la escena")
+    ok("nadie sonrie" in imagen,
+       "y en las escenas oscuras sigue diciendo que nadie sonrie")
+    reparto = reglas.bloque_prompt("reparto")
+    ok("neutra y seria" not in reparto and "smiling" not in reparto,
+       "la hoja de reparto ya no pide cara seria ni lleva la sonrisa en el negativo")
+    ok("La hoja fija QUIEN es, no que cara pone" in reparto,
+       "y dice que la cara la pone cada plano")
+    datos = json.load(open(reglas.RUTA, encoding="utf-8"))
+    origenes = {r["id"]: r.get("origen") or {} for r in datos["reglas"]}
+    cara, hoja = (origenes["expresion-facial-explicita"],
+                  origenes["hoja-reparto-cara-visible"])
+    igual((cara.get("proyecto"), (cara.get("revisada") or {}).get("proyecto"),
+           hoja.get("proyecto")),
+          ("caso-meridiano", "video_largo_light", "video_largo"),
+          "con sus origenes anonimizados, tambien el de la revision")
+
+    titulo("las caras: la hoja fija quien es, no que cara pone")
+    ficha = {"tipo": "reparto", "nombre": "agente",
+             "descripcion": "a young stockbroker in a grey suit"}
+    hoja = p6_assets._prompt_reparto(ficha, ESTILO_MONIGOTE)
+    ok("serious" not in hoja and "relaxed resting expression" in hoja,
+       "la hoja se dibuja con el gesto en reposo, no serio")
+    tapada = p6_assets._prompt_reparto(
+        dict(ficha, descripcion="a hacker wearing a mask"), ESTILO_MONIGOTE)
+    ok("serious" not in tapada and "resting expression" in tapada,
+       "tambien la de cara tapada, donde la cara se vea")
+    plano = p6_assets._prompt_completo(
+        {"prompt": "the broker at his desk", "luz": "night"},
+        [{"papel": "lamina", "cuantas": 4, "ruta": "l.png"},
+         {"papel": "reparto", "nombre": "agente", "ruta": "r.png"}],
+        ESTILO_MONIGOTE)
+    ok("does NOT decide is the facial expression" in plano,
+       "el plano copia la identidad de la hoja pero no su gesto")
+    ok("sample characters are content too" in plano,
+       "ni el gesto de los personajes de muestra de la lamina de estilo")
+    de_nota = p6_assets.frase_de_referencia(
+        3, {"papel": "reparto", "nombre": "agente", "de_nota": True, "ruta": "r.png"})
+    ok("not their expression" in de_nota,
+       "y lo mismo la hoja que trae una nota del revisor")
+    import moodboard
+    ok("serious" not in moodboard.EJES["cara"]["prompt"],
+       "y la cara del moodboard de un estilo nuevo no nace seria")
+
+    titulo("las caras: lo que se le dice al catalogo, al director y al redactor")
+    for nombre, texto in (("catalogo", catalogo_visual.CRITERIO),
+                          ("direccion", direccion.INSTRUCCION
+                           + direccion.TONOS_CINCO + direccion.TONOS_SENCILLO),
+                          ("redactor", redactor.INSTRUCCION)):
+        bajo = texto.lower()
+        ok("sonrisa prohibida" not in bajo and "prohibicion de sonreir" not in bajo
+           and "prohibida por defecto" not in bajo
+           and "nadie sonrie nunca" not in bajo,
+           f"el {nombre} ya no cree que sonreir este prohibido")
+        ok("relajada" in bajo, f"y al {nombre} se le dice que el neutro es relajado")
+
+
+def prueba_planos_sencillos():
+    """Un catalogo sencillo pide planos limpios; uno de antes, lo de siempre.
+
+    EL FALLO (30-09-2026, un video largo): 117 notas de repaso para 281 planos.
+    Fuera de las caras, casi todas eran cosas que SOBRABAN (gente al fondo,
+    objetos repetidos, banderas, carteles con letras inventadas) o angulos que
+    el generador dibuja mal con monigotes (cenitales, siluetas, contrapicados
+    extremos), y los fallos pasaban de un plano al siguiente por la continuidad.
+
+    Y LO QUE SE CORRIGIO EL MISMO DIA, hablandolo con el dueno: gente si (hasta
+    unas diez, y multitudes con menos detalle) y nada de un repertorio de caras
+    (la cara la escribe la linea). En esta version no hay personaje fijo del
+    canal, asi que nada de lo suyo.
+
+    LO QUE NO PUEDE CAMBIAR: un catalogo sin la marca --todos los guardados
+    hasta hoy-- se reparte y se pide exactamente igual. Si cambiara una carta o
+    una frase de su prompt, el plano que se rehiciera ya no estaria en la cache.
+    """
+    titulo("sencillo: la marca la pone el catalogo nuevo, y solo el")
+    limpio = catalogo_visual._limpiar(
+        {"reparto": {"socio": {"descripcion": "x", "palabras": ["socio"]}},
+         "sets": {"oficina": {"descripcion": "an office"}},
+         "beats": [{"desde": "B001", "hasta": "B001", "set": "oficina",
+                    "personajes": ["socio"], "tono": "Alegre"},
+                   {"desde": "B002", "hasta": "B002", "set": "oficina",
+                    "personajes": ["socio"], "tono": "Tensó"}]},
+        ["B001", "B002"])
+    ok(limpio.get("sencillo") is True, "un catalogo deducido hoy es sencillo")
+    igual([b["tono"] for b in limpio["beats"]], ["alegre", "tenso"],
+          "y un tono con mayuscula o con tilde llega como lo busca la tabla de caras")
+    igual(sorted(p6_assets.TONOS), sorted(direccion.TONOS_VALIDOS),
+          "sin repertorio de caras nuevo: los cinco tonos de siempre")
+    fuente_app = open(os.path.join(RAIZ, "app.py"), encoding="utf-8").read()
+    ok('limpio["sencillo"] = True' in fuente_app
+       and '("reales", "_firma_guion", "sencillo")' in fuente_app,
+       "y app.py la guarda al deducirlo y la conserva al editarlo a mano")
+    ok('"sencillo" not in guardado' not in fuente_app,
+       "sin volver a deducir los catalogos viejos que no la llevan: eso "
+       "moveria la firma de sus imagenes")
+
+    titulo("sencillo: las cartas faciles, y las dificiles fuera")
+    faciles = {cid for cid, _ in encuadres.ESCALERA_SENCILLA}
+    for dificil in ("aereo", "cenital", "contrapicado", "silueta", "entre",
+                    "hombro", "suelo", "pantalla", "eterea", "diagrama", "perfil"):
+        ok(dificil not in faciles, f"«{dificil}» no esta en la escalera sencilla")
+    for cid in faciles:
+        ok(encuadres.carta_por_id(cid), f"«{cid}» se encuentra por su id")
+    for cid in faciles & set(encuadres.POR_ID):
+        igual(encuadres.carta_por_id(cid)["encuadre"],
+              encuadres.POR_ID[cid]["encuadre"],
+              f"«{cid}», compartida, es la MISMA carta que en la clasica")
+    ok(not set(encuadres.SOLO_SENCILLA) & set(encuadres.POR_ID),
+       "y las nuevas tienen id propio: ninguna pisa una de la clasica")
+    escenas = ([{"id": f"S{i:03d}", "personajes": ["socio"]} for i in range(1, 31)]
+               + [{"id": f"S{i:03d}", "personajes": []} for i in range(31, 61)])
+    reparto = encuadres.repartir_sencillo(escenas, semilla=5)
+    igual({k: v["id"] for k, v in reparto.items()},
+          {k: v["id"] for k, v in encuadres.repartir_sencillo(escenas,
+                                                               semilla=5).items()},
+          "determinista: el mismo plan da las mismas cartas")
+    ok(all(reparto[e["id"]]["id"] in faciles for e in escenas),
+       "solo salen cartas de la escalera sencilla")
+    ok(all(reparto[e["id"]]["id"] not in encuadres.SIN_GENTE for e in escenas[:30]),
+       "un plano con gente nunca recibe una carta sin gente (vacio, detalle, "
+       "simbolo, esquema)")
+    ok(len({reparto[e["id"]]["id"] for e in escenas[30:]}) > 3,
+       "y los planos sin gente tienen la escalera entera")
+    familias = [reparto[e["id"]]["familia"] for e in escenas]
+    igual([i for i in range(1, len(familias)) if familias[i] == familias[i - 1]],
+          [], "y nunca dos planos seguidos de la misma familia")
+    igual(encuadres.repartir_sencillo([{"id": "S001", "personajes": ["socio"]}],
+                                      forzadas={"S001": "cenital"})["S001"]["id"],
+          "cenital", "lo que alguien fuerza a mano sigue mandando")
+
+    titulo("sencillo: un catalogo viejo se reparte y se pide como siempre")
+    catalogo = {"reparto": {"socio": {"descripcion": "x"},
+                            "vendedores": {"descripcion": "y", "grupo": True}},
+                "sets": {"oficina": {"descripcion": "an office"}}, "beats": []}
+
+    def plano(sid, gente, **extra):
+        return dict({"id": sid, "narracion": "Vendia acciones.", "set": "oficina",
+                     "personajes": list(gente)}, **extra)
+
+    viejas = [plano(f"S{i:03d}", ["socio"] if i % 2 else []) for i in range(1, 41)]
+    p6_assets._asignar_cartas(viejas, {"semilla": 3})
+    clasico = encuadres.repartir([plano(e["id"], []) for e in viejas], semilla=3)
+    igual([e["carta"] for e in viejas], [clasico[e["id"]]["id"] for e in viejas],
+          "sin la marca, carta por carta la del reparto de siempre")
+    ok(not any(e.get("sencillo") for e in viejas), "y ningun plano se marca")
+    igual(p6_assets._informe_cartas(viejas)["escalera"],
+          [{"id": c["id"], "nombre": c["nombre"]} for c in encuadres.ESCALERA],
+          "y la pantalla ofrece la escalera de siempre")
+    vieja = plano("S001", ["socio", "vendedores"],
+                  direccion="the partner grinning at the phone (TONO: alegre)")
+    igual(p6_assets._cara_del_plano(vieja, {}), p6_assets._expresion("alegre"),
+          "su cara es la del tono, diga lo que diga la linea, como antes")
+    igual(p6_assets._citar_reparto(["vendedores"], catalogo),
+          "the group 'vendedores'", "y el grupo se nombra como se nombraba")
+    por_id = {sid: {"id": sid, "set": "prensa"} for sid in ("S240", "S241", "S242")}
+    igual(p6_assets.continuidad_de({"id": "S243", "set": "prensa"},
+                                   ["S240", "S241", "S242"], por_id), ["S242"],
+          "su continuidad, en el ultimo plano del sitio, como siempre")
+    refs = [{"papel": "lamina", "cuantas": 4, "ruta": "l.png"},
+            {"papel": "reparto", "nombre": "socio", "ruta": "r.png"},
+            {"papel": "continuidad", "ruta": "c.png", "mismo_set": True}]
+    base = {"prompt": "the partner at his desk", "luz": "night",
+            "personajes": ["socio", "vendedores"]}
+    fichas = {"asset:vendedores": {"grupo": True}}
+    viejo = p6_assets._prompt_completo(base, refs, ESTILO_MONIGOTE, idioma="es",
+                                       fichas_reparto=fichas)
+    ok(p6_assets.SENCILLEZ not in viejo and p6_assets.DISTINTOS not in viejo
+       and "Take ONLY the architecture" not in viejo,
+       "y su prompt no lleva nada de lo nuevo")
+
+    titulo("sencillo: uno nuevo, con todo lo nuevo")
+    nuevas = [plano(f"S{i:03d}", ["socio"] if i % 2 else []) for i in range(1, 41)]
+    p6_assets._marcar_sencillo(nuevas)
+    ok(all(e.get("sencillo") for e in nuevas), "cada plano lleva la marca")
+    p6_assets._asignar_cartas(nuevas, {"semilla": 3}, sencillo=True)
+    ok(all(e["carta"] in faciles for e in nuevas),
+       "y reparte con la escalera sencilla")
+    igual([c["id"] for c in p6_assets._informe_cartas(nuevas, sencillo=True)
+           ["escalera"]], [cid for cid, _ in encuadres.ESCALERA_SENCILLA],
+          "y la pantalla ofrece la suya")
+
+    titulo("sencillo: la cara la escribe la linea, y el tono es solo la red")
+    dicha = plano("S001", ["socio"], sencillo=True,
+                  direccion="the partner grinning smugly at the phone (TONO: alegre)")
+    igual(p6_assets._cara_del_plano(dicha, {}), "",
+          "si la linea dice la cara, no se le pega ninguna frase fija")
+    callada = dict(dicha, direccion="the partner at the phone (TONO: alegre)")
+    igual(p6_assets._cara_del_plano(callada, {}), p6_assets._expresion("alegre"),
+          "si no la dice, entra la del tono")
+    ok(not p6_assets._dice_la_expresion("the partner, eyes on the viewer"),
+       "mirar a alguien no es decir que cara pone")
+    prompt_dicha = p6_assets._prompt_visual(dicha, {"tono": "alegre"}, catalogo)
+    ok(p6_assets._expresion("alegre") not in prompt_dicha
+       and "grinning smugly" in prompt_dicha,
+       "y en el prompt queda la cara de la linea, sin una segunda encima")
+
+    titulo("sencillo: gente si, relleno no")
+    grupo = p6_assets._citar_reparto(["vendedores"], catalogo, True)
+    ok("as many of them as the scene needs" in grupo and "less detailed" in grupo,
+       "un grupo sale con los que haga falta, y los de atras mas simples")
+    ok("up to about ten" in p6_assets.SENCILLEZ
+       and "not call for" in p6_assets.SENCILLEZ,
+       "el cuadro limpio quita la gente de relleno, no la multitud que pide la "
+       "escena")
+
+    titulo("sencillo: el prompt pide un cuadro limpio, en el idioma del video")
+    sencillos = [dict(r, sencillo=True) if r["papel"] == "continuidad" else r
+                 for r in refs]
+    nuevo = p6_assets._prompt_completo(dict(base, sencillo=True), sencillos,
+                                       ESTILO_MONIGOTE, idioma="es",
+                                       fichas_reparto=fichas)
+    ok(p6_assets.SENCILLEZ in nuevo, "uno sencillo pide el cuadro limpio")
+    ok(nuevo.index(p6_assets.SENCILLEZ) > nuevo.index("Scene:")
+       and nuevo.index(p6_assets.SENCILLEZ)
+       < nuevo.index(p6_assets.ULTIMA_PALABRA_ROTULOS),
+       "detras de la escena y delante de la ultima palabra sobre las letras")
+    ok(p6_assets.DISTINTOS in nuevo,
+       "con dos personas (o un grupo), pide que no salgan iguales")
+    ok(p6_assets.DISTINTOS not in p6_assets._prompt_completo(
+        {"prompt": "x", "personajes": ["socio"], "sencillo": True}, refs[:2],
+        ESTILO_MONIGOTE), "y con una sola, no")
+    ok(p6_assets._ultima_palabra_idioma("es") in nuevo
+       and "as written in Spain" not in nuevo,
+       "lo escrito dentro del dibujo, en el idioma del video y sin forzar el de "
+       "ningun pais: lo usan canales de los dos lados del Atlantico")
+    ok("Take ONLY the architecture" in nuevo,
+       "la foto del mismo sitio no arrastra gente, banderas ni letreros")
+
+    titulo("sencillo: la continuidad se apoya en el PRIMERO del sitio")
+    igual(p6_assets.continuidad_de({"id": "S243", "set": "prensa", "sencillo": True},
+                                   ["S240", "S241", "S242"], por_id), ["S240"],
+          "en el primero: una bandera que salio en S241 no llega a S243")
+
+    titulo("sencillo: lo que se le dice al catalogo y al director")
+    ok("COMO MUCHO DOS" in catalogo_visual.CRITERIO
+       and "banderas" in catalogo_visual.CRITERIO,
+       "el sitio va casi vacio: arquitectura y dos rasgos, sin letreros ni banderas")
+    ok("DISTINGUE DE LOS DEMAS" in catalogo_visual.CRITERIO,
+       "y cada personaje se distingue de los demas a primera vista")
+    ok("{sencillez}" in direccion.INSTRUCCION and "MENOS COSAS" in direccion.SENCILLEZ
+       and "unas diez personas" in direccion.SENCILLEZ,
+       "el director recibe la seccion de planos sencillos, con gente si hace falta")
+    ok("LA CARA LA ESCRIBES TU" in direccion.TONOS_SENCILLO
+       and "LA CARA LA ESCRIBES TU" not in direccion.TONOS_CINCO,
+       "y escribe la cara en la linea solo con un catalogo sencillo")
+    ok(all("PERSONAJE DEL CANAL" not in t and "narrador" not in t.lower()
+           for t in (direccion.SENCILLEZ, direccion.TONOS_SENCILLO,
+                     p6_assets.SENCILLEZ)),
+       "y nada de un personaje fijo del canal: en esta version no lo hay")
+    ok("FIJOS" not in catalogo_visual.INSTRUCCION
+       and "{fijos}" not in catalogo_visual.INSTRUCCION,
+       "ni en el encargo del catalogo")
+
+    titulo("los EJES del moodboard dicen lo que NO llevan")
+    import moodboard
+    for eje in ("interior", "objeto", "diagrama"):
+        ok("No people" in moodboard.EJES[eje]["prompt"]
+           or "no people" in moodboard.EJES[eje]["prompt"],
+           f"«{eje}» dice que no lleva gente")
+
+
+def prueba_el_catalogo_pide_lo_que_se_usa():
+    """El catalogo no pide lo que esta version tira (octubre de 2026).
+
+    Se pedian las cosas reales de Wikimedia Commons, los mapas, los lugares y
+    los capitulos, y `_correr_escenarios` guarda solo el reparto, los sitios,
+    los tramos y `reales` (que ya no lee nadie). O sea: tokens pagados para
+    tirarlos. `_limpiar` sigue entendiendolos si llegan.
+    """
+    titulo("catalogo: no pide lo que nadie lee")
+    for seccion in ("REALES —", "COMPONENTES —", "LUGARES —", "CAPITULOS —"):
+        ok(seccion not in catalogo_visual.CRITERIO,
+           f"el criterio ya no explica «{seccion[:-2]}»")
+    for clave in ('"reales"', '"componentes"', '"lugares"', '"capitulos"'):
+        ok(clave not in catalogo_visual.INSTRUCCION,
+           f"y el JSON que se pide ya no lleva {clave}")
+    for clave in ('"reparto"', '"sets"', '"beats"'):
+        ok(clave in catalogo_visual.INSTRUCCION, f"y si lleva {clave}")
+    limpio = catalogo_visual._limpiar(
+        {"sets": {"oficina": {"descripcion": "an office"}},
+         "beats": [{"desde": "B001", "hasta": "B001", "set": "oficina"}]},
+        ["B001"])
+    igual(limpio["reales"], [],
+          "`reales` sigue saliendo, vacio: su presencia es la marca de catalogo "
+          "completo, y sin ella `_correr_escenarios` volveria a deducirlo")
+    igual((limpio["componentes"], limpio["lugares"], limpio["capitulos"]),
+          ({}, {}, {}), "y lo demas sale vacio sin romper nada")
+    entero = catalogo_visual.INSTRUCCION.format(
+        titulo="t", tema="t", peticion="", especie="", guion="[B001] x",
+        criterio=catalogo_visual.CRITERIO.format(
+            planos_por_set=2, cuantos_planos="", regiones_mapa="america"))
+    ok("{" not in entero.split("DEVUELVE")[0],
+       "y el encargo se arma entero, sin un hueco sin rellenar")
+
+
+def prueba_la_nota_no_cambia_la_hoja():
+    """La nota decide QUE hace el personaje; la hoja, COMO es (30-09-2026).
+
+    Se pidio a un personaje «señalando hacia abajo» y salio con una mano
+    realista y el dedo estirado, cuando en su hoja los brazos son trazos sin
+    manos: «gana a todo» se leia tambien contra la hoja. Hicieron falta tres
+    notas mas para volver a ella.
+    """
+    titulo("nota: decide que hace, no como se dibuja a nadie")
+    bloque = p6_assets._bloque_feedback("señalando hacia abajo")
+    ok("cast sheet still fixes" in bloque and "no hand or finger" in bloque,
+       "una nota que pide señalar no le pone manos a quien no las tiene")
+    ok(bloque.endswith("señalando hacia abajo."), "y la nota sigue siendo lo ultimo")
+    sin = p6_assets._prompt_completo({"prompt": "x", "narracion": "y"}, [],
+                                     ESTILO_MONIGOTE)
+    ok("cast sheet still fixes" not in sin,
+       "y solo en los planos con nota: los demas prompts no cambian")
 
 
 def prueba_cartelas():
@@ -4263,6 +5071,8 @@ def main():
     prueba_cadenas()
     prueba_moodboard()
     prueba_rehacer_de_verdad()
+    prueba_pasada_fallida_no_repaga()
+    prueba_reintento_sin_la_cita()
     prueba_ids_en_orden()
     prueba_guia_con_manos()
     prueba_recarga_de_motores()
@@ -4281,6 +5091,12 @@ def main():
     prueba_espaciar()
     prueba_cartelas()
     prueba_direccion()
+    prueba_lo_escrito_en_el_dibujo()
+    prueba_cartelas_perdidas_y_planos_sin_dirigir()
+    prueba_las_caras_salen_de_la_escena()
+    prueba_planos_sencillos()
+    prueba_el_catalogo_pide_lo_que_se_usa()
+    prueba_la_nota_no_cambia_la_hoja()
     prueba_subtitulos()
     prueba_encajar_mide_el_ancho()
     prueba_cartelas_composicion()

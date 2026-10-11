@@ -50,6 +50,7 @@ ejecutar devuelve {"salidas", "unidades", "conservadas", "dependencias", "plan",
 "todas", "regeneradas"}: "unidades" trae SOLO lo rehecho en esta pasada, que es
 lo que debe sellarse, y "dependencias" el mapa escena -> assets usados.
 """
+import copy
 import difflib
 import hashlib
 import math
@@ -1051,13 +1052,30 @@ def _asignar_sets(escenas, catalogo, p):
     return beats
 
 
+def _marcar_sencillo(escenas):
+    """Marca `sencillo` los planos de un CATALOGO SENCILLO.
+
+    `catalogo["sencillo"]` lo pone `catalogo_visual._limpiar` en los catalogos
+    que deduce desde el 01-10-2026. Es una clave de la DECISION: un catalogo de
+    antes no la lleva y su video se planifica, se reparte y se pide exactamente
+    como antes -- ni una carta ni un prompt cambian, asi que ninguna imagen ya
+    pagada deja de encontrarse en la cache --. Con ella, cada plano lleva
+    `sencillo` y por eso:
+
+      · reparte con la escalera sencilla (`encuadres.repartir_sencillo`);
+      · el prompt pide un cuadro limpio (`SENCILLEZ`) y gente distinguible
+        (`DISTINTOS`), y la cara la escribe la linea (`_cara_del_plano`);
+      · la continuidad se apoya en el PRIMER plano del sitio y no arrastra
+        letreros ni gente (`continuidad_de`, `frase_de_referencia`).
+
+    Va en cada PLANO y no solo en el catalogo porque quien arma el prompt solo
+    ve el plano.
+    """
+    for escena in escenas:
+        escena["sencillo"] = True
 
 
-
-
-
-
-def _asignar_cartas(escenas, p):
+def _asignar_cartas(escenas, p, sencillo=False):
     """Que CLASE de plano es cada uno: aereo, detalle macro, diagrama, pantalla.
 
     La carta es lo que produce ritmo: pedirle a un modelo de imagen «haz un
@@ -1069,11 +1087,16 @@ def _asignar_cartas(escenas, p):
 
     Se puede forzar por plano desde la pantalla: `unidades['escena:S007'].carta`.
     Una decision tomada mirando el video manda sobre cualquier reparto.
+
+    Con `sencillo` (un catalogo que lo pide, ver `_marcar_sencillo`) se reparte
+    con la escalera sencilla. Sin la marca, el reparto es el de siempre, carta
+    por carta.
     """
     forzadas = {e["id"]: str(_ajustes_unidad(p, f"escena:{e['id']}").get("carta")
                              or "") for e in escenas}
-    cartas = encuadres.repartir(escenas, semilla=p.get("semilla", 0),
-                                forzadas={k: v for k, v in forzadas.items() if v})
+    repartir = encuadres.repartir_sencillo if sencillo else encuadres.repartir
+    cartas = repartir(escenas, semilla=p.get("semilla", 0),
+                      forzadas={k: v for k, v in forzadas.items() if v})
     for escena in escenas:
         carta = cartas.get(escena["id"])
         if not carta:
@@ -1086,7 +1109,7 @@ def _asignar_cartas(escenas, p):
     return cartas
 
 
-def _repartir_zoom(escenas):
+def _repartir_zoom(escenas, sencillo=False):
     """El zoom de cada plano, alternado. Se juega en el CORTE, sobre la imagen.
 
     No necesita ninguna caja ni ningun ancla sobre el que centrarse: el
@@ -1095,10 +1118,10 @@ def _repartir_zoom(escenas):
     segmentar = medios.motor("guion/segmentar.py")
     for indice, escena in enumerate(escenas):
         escena["zoom"] = segmentar.alternar_zoom(indice, None)
-    return _informe_cartas(escenas)
+    return _informe_cartas(escenas, sencillo=sencillo)
 
 
-def _informe_cartas(escenas):
+def _informe_cartas(escenas, sencillo=False):
     """Que ha salido del reparto de cartas.
 
     'planos_repetidos' cuenta planos SEGUIDOS de la misma familia, que es la
@@ -1108,7 +1131,7 @@ def _informe_cartas(escenas):
     el ritmo.
     """
     cartas = [e.get("carta") for e in escenas if e.get("carta")]
-    familias = [(encuadres.POR_ID.get(c) or {}).get("familia") for c in cartas]
+    familias = [(encuadres.carta_por_id(c) or {}).get("familia") for c in cartas]
     seguidas = [escenas[i]["id"] for i in range(1, len(familias))
                 if familias[i] and familias[i] == familias[i - 1]]
     return {
@@ -1120,9 +1143,12 @@ def _informe_cartas(escenas):
         # Las clases de plano que existen, para que la pantalla pueda ofrecer
         # otra sin tener que conocer la escalera. Va en el plan y no en un
         # endpoint aparte porque la pantalla ya lee el plan entero: un viaje
-        # menos y, sobre todo, imposible que se desincronicen.
+        # menos y, sobre todo, imposible que se desincronicen. Con un catalogo
+        # sencillo, la suya: ofrecer un cenital ahi seria ofrecer lo que ese
+        # video ha dejado de pedir a proposito.
         "escalera": [{"id": c["id"], "nombre": c["nombre"]}
-                     for c in encuadres.ESCALERA],
+                     for c in (encuadres.escalera_sencilla() if sencillo
+                               else encuadres.ESCALERA)],
     }
 
 
@@ -1200,11 +1226,16 @@ def planificar(proyecto, params, inventario=None, replantear=False,
     _tramos_de_beats(catalogo, meta)
     _capitulos_por_escena(catalogo, escenas)
     beats = _asignar_sets(escenas, catalogo, p)
+    # UN CATALOGO SENCILLO: planos limpios, cartas faciles y la cara escrita en
+    # la linea (ver `_marcar_sencillo`). Sin la marca no cambia nada.
+    sencillo = bool(catalogo.get("sencillo"))
+    if sencillo:
+        _marcar_sencillo(escenas)
     # La carta manda en texto y no hay nada que construir: el generador compone
     # libre sobre el SHOT TYPE. Se reparte sobre las escenas YA ordenadas: la
     # regla de no repetir familia mira a los vecinos, no a un plano suelto.
-    _asignar_cartas(escenas, p)
-    camaras = _repartir_zoom(escenas)
+    _asignar_cartas(escenas, p, sencillo=sencillo)
+    camaras = _repartir_zoom(escenas, sencillo=sencillo)
 
     # Las duraciones definitivas ANTES de decidir los rotulos: un plano de menos
     # de tres segundos no admite ninguno, y eso solo se sabe una vez repartidos
@@ -1264,6 +1295,17 @@ def planificar(proyecto, params, inventario=None, replantear=False,
                     escena["set"] = None
         else:
             escena.pop("redactado", None)
+    # LOS QUE SE QUEDAN SIN DIRIGIR EN UN VIDEO DIRIGIDO, dichos. Se arman con
+    # la accion del tramo, que es la misma para sus vecinos y va en el idioma
+    # del guion: en un video largo (28-09-2026) diez planos salieron asi sin
+    # que nada lo contara, y uno llevo esa accion pintada como texto encima del
+    # dibujo. Aqui solo se DICE; quien los dirige antes de pagar es la tarea de
+    # direccion (ver `app._planos_por_dirigir`).
+    if any(e.get("direccion") for e in escenas):
+        informe["sin_dirigir"] = [
+            e["id"] for e in escenas
+            if not e.get("direccion") and not e.get("redactado")
+            and not e.get("sigue_a") and not _sin_imagen(e)]
 
     # Lo que hace falta para rotular con criterio y no en cada plano: en que
     # plano se ENTRA en un sitio, y en cual sale alguien por primera vez.
@@ -1483,6 +1525,13 @@ def _marcar_cartelas(escenas, beats, p):
     Un plano que se hace cartela pierde su prompt y sus assets: no se genera.
     """
     por_texto = _cartelas_por_texto(p)
+    # los textos que hay en el plan de AHORA: una ficha anclada a uno de ellos
+    # ya se coloca por su texto, y colocarla ademas por su numero la pondria dos
+    # veces. Pasa desde `reubicar_cartelas` (la ficha vive en el hogar y su
+    # ancla es el plano que el hogar absorbio) y tambien cuando el corte cambia
+    # y los numeros se corren: la ficha guardada en S087 cuyo texto dice ahora
+    # S088 la encontraban los dos.
+    vivos = {_texto_clave(e) for e in escenas}
     plan = {}
     for indice, escena in enumerate(escenas):
         # POR LO QUE DICE EL PLANO, Y SI NO POR SU NUMERO.
@@ -1500,6 +1549,10 @@ def _marcar_cartelas(escenas, beats, p):
         ficha = por_texto.get(_texto_clave(escena))
         if not isinstance(ficha, dict):
             ficha = _ajustes_unidad(p, f"escena:{escena['id']}").get("cartela")
+            ancla = _texto_clave({"narracion": (ficha or {}).get("ancla")}) \
+                if isinstance(ficha, dict) else ""
+            if ancla and ancla in vivos:
+                ficha = None         # la coloca su texto, en su plano
         if isinstance(ficha, dict) and ficha.get("plantilla"):
             plan[escena["id"]] = ficha
     idioma = _idioma_hablado(escenas)
@@ -1845,9 +1898,10 @@ def _prompt_visual(escena, beat, catalogo):
     if redactado:
         # EL SUELO DE LA CARA. Un plano con gente cuyo parrafo no dice la
         # expresion se queda sin que NADIE la diga: esta rama se salta el
-        # `_expresion(_tono_de(...))` de mas abajo, y las reglas de la casa
-        # llevan «smiling, grin, cheerful expression» en el negativo. O sea que
-        # el defecto silencioso no es «la que toque», es «serio».
+        # `_cara_del_plano(...)` de mas abajo, y entonces la cara la decide el
+        # generador a ciegas o la copia de la hoja del personaje. (Hasta el
+        # 30-09-2026 era peor: las reglas de la casa llevaban «smiling» en el
+        # negativo y el defecto silencioso era «serio».)
         #
         # Medido el 07-09-2026: `prueba_1` dejo 98 de 299 planos con gente sin
         # declararla y `prueba_2` 54 -- con la misma instruccion, que ya dice
@@ -1856,7 +1910,9 @@ def _prompt_visual(escena, beat, catalogo):
         # otro camino. Si la trae, aqui no se toca nada: dos expresiones en el
         # mismo prompt seria pedir dos caras.
         if escena.get("personajes") and not _dice_la_cara(redactado):
-            redactado = _unir(redactado, _expresion(_tono_de(escena, beat)))
+            cara = _cara_del_plano(escena, beat)
+            if cara:
+                redactado = _unir(redactado, cara)
         base = _con_narracion(redactado, escena)
         return (f"{base} SHOT TYPE, and this is not optional: "
                 f"{escena['encuadre']}." if escena.get("encuadre") else base)
@@ -1895,10 +1951,11 @@ def _prompt_visual(escena, beat, catalogo):
         if beat.get("accion") and not _tiene_direccion(escena):
             partes.append(beat["accion"])
         if escena.get("personajes"):
-            partes.append("with " + _citar_reparto(escena["personajes"], catalogo)
+            partes.append("with " + _citar_reparto(escena["personajes"], catalogo,
+                                                   escena.get("sencillo"))
                 + " drawn as the same stick-figure characters as the rest of "
                   "the video, integrated into the composition")
-            partes.append(_expresion(_tono_de(escena, beat)))
+            partes.append(_cara_del_plano(escena, beat))
         base = _con_narracion(
             _con_direccion(", ".join(x for x in partes if x), escena), escena)
         return (f"{base} SHOT TYPE, and this is not optional: "
@@ -1930,8 +1987,9 @@ def _prompt_visual(escena, beat, catalogo):
     if beat.get("accion") and not _tiene_direccion(escena):
         partes.append(beat["accion"])
     if escena.get("personajes") and not otro_sitio:
-        partes.append("with " + _citar_reparto(escena["personajes"], catalogo))
-        partes.append(_expresion(_tono_de(escena, beat)))
+        partes.append("with " + _citar_reparto(escena["personajes"], catalogo,
+                                               escena.get("sencillo")))
+        partes.append(_cara_del_plano(escena, beat))
     if escena.get("primer_termino"):
         # solo lo llevan los planos que han tenido que repetir camara: cambiar el
         # sujeto en primer termino es lo que hace que no se lean como el mismo
@@ -1953,19 +2011,40 @@ def _prompt_visual(escena, beat, catalogo):
     return base
 
 
-# Expresion facial por tono del beat.
+# Expresion facial por tono del plano.
 #
 # La regla de la casa dice que todo prompt con personajes declara la expresion
-# de forma explicita (boca, cejas y mirada) y que la sonrisa esta PROHIBIDA por
-# defecto, salvo que el plan de escenas pida tono alegre. Con el plan vacio esa
-# excepcion no podia dispararse NUNCA: por eso en una fiesta salian todos serios.
-# Aqui es donde el tono del beat levanta la prohibicion, y solo aqui.
+# de forma explicita (boca, cejas y mirada), y que esa expresion SALE DE LA
+# ESCENA (regla `expresion-facial-explicita` de motores/reglas).
+#
+# HASTA EL 30-09-2026 LA SONRISA ESTABA PROHIBIDA POR DEFECTO y el neutro era
+# «straight closed mouth... No smiling». Venia de un video de contrabando de
+# noche en el que contrabandistas y militares salian sonriendo, y la correccion
+# se quedo para todos los videos. Medido en un video largo despues: el director
+# eligio neutro en 156 planos, tenso en 59, triste en 20, solemne en 6 y alegre
+# en 16, asi que 241 de 257 planos con gente (el 94 %) llevaban la orden de no
+# sonreir. Salian serios tirando a tristes -- el publico aplaudiendo, la
+# fiesta, quien saludaba al espectador --. El dueno lo arrastraba desde hacia
+# tiempo: «no hay que forzar que sonrian, pero que sea una expresion
+# contextual».
+#
+# Asi que el NEUTRO ES UNA CARA RELAJADA, no una seria: la de alguien que hace
+# su vida, y que puede sonreir un poco si el momento es cordial. La prohibicion
+# de sonreir se queda donde tiene sentido, en los tonos oscuros (tenso, triste,
+# solemne), que es donde el generador la necesita.
+#
+# Cambiar estas frases no mueve ninguna firma: es texto del prompt. Un plano ya
+# dibujado se queda como esta; el que se pida rehacer ya no coincide con la
+# cache de su prompt viejo y se paga, que es lo que se quiere al rehacerlo.
 TONOS = {
     "alegre": ("everyone is visibly happy: open relaxed smiles with the mouth "
                "clearly curved up, raised eyebrows and bright eyes. The cheerful "
                "expression is REQUIRED in this shot, do not draw them neutral"),
-    "neutro": ("neutral faces: straight closed mouth, level eyebrows, calm gaze. "
-               "No smiling"),
+    "neutro": ("natural, relaxed faces that fit what each person is doing in "
+               "this moment: calm, attentive or lightly pleased, eyebrows at "
+               "rest, soft eyes; where the moment is friendly or going well, a "
+               "slight natural smile. Not stern, not sad and not frowning, and "
+               "no forced wide grin"),
     "tenso": ("tense faces: tight straight mouth, lowered drawn-together "
               "eyebrows, hard fixed stare. No smiling"),
     "triste": ("sad faces: mouth turned down at the corners, inner eyebrows "
@@ -1980,7 +2059,45 @@ def _expresion(tono):
     return TONOS.get(str(tono or "").strip().lower(), TONOS["neutro"])
 
 
-def _citar_reparto(personajes, catalogo):
+#: Las palabras con las que una linea dice QUE CARA pone alguien. Mas estricta
+#: que `PISTAS_DE_CARA` a proposito: «eyes on the viewer» dice donde mira, no
+#: que cara pone, y con la lista ancha un plano asi se quedaba sin expresion.
+_EXPRESION_DICHA = re.compile(
+    r"\b(smil\w*|grin\w*|frown\w*|laugh\w*|mouth\w*|brows?|eyebrows?|"
+    r"expressions?|scowl\w*|cheer\w*|beam\w*|shout\w*|yell\w*|scream\w*|"
+    r"cry|cries|crying|tears|sob\w*|wide-eyed|surprised|shocked|stunned|angry|"
+    r"furious|happy|joyful|delighted|sad|worried|scared|afraid|frightened|"
+    r"nervous|smug|sly|excited|euphoric|proud|bored|pleased|glum|gloomy)\b",
+    re.I)
+
+
+def _dice_la_expresion(texto):
+    """Si ese texto dice que expresion tiene quien sale. -> bool"""
+    return bool(_EXPRESION_DICHA.search(str(texto or "")))
+
+
+def _cara_del_plano(escena, beat):
+    """La frase de la cara de ESTE plano, o "" si ya la dice su linea. -> str
+
+    Lo de siempre (`_expresion(_tono_de(...))`) en un catalogo de antes: su
+    prompt sale igual que salia.
+
+    EN UNO SENCILLO, LA CARA LA ESCRIBE LA LINEA. El director describe la
+    expresion de quien sale tal y como encaja en ESE momento, con sus palabras,
+    y entonces aqui no se anade ninguna frase fija. Se probo a ampliar la tabla
+    con cuatro tonos mas sacados de las notas de un video (picaro, euforico,
+    asustado, enfadado) y el dueno lo paro: una tabla de caras es un repertorio,
+    y un repertorio acaba tirando de sus mismas caras en todos los videos. La
+    del tono entra solo como red, si la linea no la dice.
+    """
+    tono = _tono_de(escena, beat)
+    if not (escena or {}).get("sencillo"):
+        return _expresion(tono)
+    linea = (escena or {}).get("direccion") or ""
+    return "" if _dice_la_expresion(linea) else _expresion(tono)
+
+
+def _citar_reparto(personajes, catalogo, sencillo=False):
     """Como se nombra al reparto DENTRO de la escena. -> str
 
     POR SU NOMBRE DE HOJA, NO POR SU DESCRIPCION (07-09).
@@ -2011,12 +2128,23 @@ def _citar_reparto(personajes, catalogo):
 
     Un GRUPO se nombra como grupo: su hoja dibuja a varios, y llamarlo «the
     character» pediria uno.
+
+    UN GRUPO, EN UN CATALOGO SENCILLO, LLEVA SU REGLA DE DETALLE. En la sala de
+    ventas de un video largo salio una sala entera de vendedores con telefonos,
+    cables y manos de verdad, y esos planos se llevaron cuatro notas cada uno.
+    No era el numero: era el detalle. Los que hagan falta, y los de atras mas
+    simples. Sin la marca, el texto es el de siempre.
     """
     reparto = (catalogo or {}).get("reparto") or {}
     piezas = []
     for quien in personajes or []:
-        que = "the group" if (reparto.get(quien) or {}).get("grupo") else "the character"
-        piezas.append(f"{que} '{quien}'")
+        if (reparto.get(quien) or {}).get("grupo"):
+            piezas.append(f"the group '{quien}'" + (
+                " (as many of them as the scene needs; beyond about ten, or "
+                "far in the background, drawn as simpler, less detailed "
+                "figures)" if sencillo else ""))
+        else:
+            piezas.append(f"the character '{quien}'")
     return " and ".join(piezas)
 
 
@@ -2035,15 +2163,53 @@ def _con_narracion(base, escena):
     permite que «cuesta lo que un piso en Madrid» sea el ladron viviendo en ese
     piso y no el foro de siempre con otro retoque.
     """
+    momento = _frase_narracion(escena)
+    if not momento:
+        return base
+    return _unir(base, momento)
+
+
+def _frase_narracion(escena):
+    """La frase que `_con_narracion` pega al prompt. -> str ('' sin narracion)
+
+    Aparte para que `_prompt_sin_narracion` quite EXACTAMENTE lo que se puso:
+    una sola plantilla, o el dia que cambie una de las dos dejaria de quitarse.
+    Y el texto es el de siempre, letra a letra: es el que esta en la cache de
+    todas las imagenes ya pagadas.
+    """
     linea = (escena.get("narracion") or "").strip()
     if not linea:
-        return base
-    momento = (f'This shot accompanies the narration line: "{linea}". '
-               f"Show the specific moment that line describes -- or, when the "
-               f"line is abstract (a figure, a comparison, a concept), stage "
-               f"one concrete scene that makes that idea visible. Never a "
-               f"generic view of the location.")
-    return _unir(base, momento)
+        return ""
+    return (f'This shot accompanies the narration line: "{linea}". '
+            f"Show the specific moment that line describes -- or, when the "
+            f"line is abstract (a figure, a comparison, a concept), stage "
+            f"one concrete scene that makes that idea visible. Never a "
+            f"generic view of the location.")
+
+
+def _prompt_sin_narracion(prompt, escena):
+    """El prompt sin la cita de la narracion. -> str (igual si no la lleva)
+
+    Para el reintento de un plano que el filtro de seguridad de OpenAI rechaza
+    (ver `_producir_imagen`): la narracion se cita LITERAL, y ahi van los
+    nombres que la direccion ya evita a proposito. Medido el 01-10-2026 en un
+    video sobre negocios del espectaculo: los nombres de una saga de cine y de
+    un personaje de dibujos con derechos, dichos en la narracion, tumbaron
+    cuatro cadenas cuya direccion decia solo «una silueta de raton de orejas
+    redondas».
+    """
+    frase = _frase_narracion(escena)
+    if not frase or frase not in (prompt or ""):
+        return prompt
+    limpio = prompt.replace(frase, " ")
+    limpio = re.sub(r"\s{2,}", " ", limpio).replace(" .", ".").strip()
+    return re.sub(r"\.{2,}", ".", limpio)
+
+
+def _rechazo_de_seguridad(fallo):
+    """Si un error del motor de imagen es el filtro de seguridad de OpenAI."""
+    texto = str(fallo).lower()
+    return "safety system" in texto or "moderation_blocked" in texto
 
 
 def _unir(base, trozo):
@@ -2314,13 +2480,20 @@ def frase_de_referencia(indice, ref):
                       f"that someone must be replaced by {ref['nombre']}, draw "
                       f"{ref['nombre']} from this sheet -- same face, hair, "
                       f"build and clothes -- with the same authority as any "
-                      f"cast sheet, and do not keep the character it replaces.")
+                      f"cast sheet, and do not keep the character it replaces. "
+                      f"The sheet fixes who they are, not their expression: "
+                      f"give them the one this shot calls for.")
     elif ref["papel"] == "reparto":
         # Con negativo y con prioridad, como las demas. Era el UNICO bloque de
         # referencia que decia solo que copiar y no que NO hacer: la lamina
         # lleva «never their content» y esta se quedaba en una frase de
         # diecisiete palabras. La
         # cara, que es lo que una hoja existe para fijar, ni se nombraba.
+        #
+        # LA HOJA FIJA QUIEN ES, NO QUE CARA PONE (30-09-2026). Decia «copy
+        # their faces exactly», y el generador copiaba tambien el gesto de la
+        # hoja: el personaje salia con la misma cara en todos sus planos,
+        # celebrara o perdiera. La expresion es del plano.
         lineas.append(f"Reference image {indice} is the cast sheet for "
                       f"'{ref['nombre']}': draw those exact characters. Copy "
                       f"their faces, hair, skin tone, build and clothes exactly "
@@ -2329,7 +2502,11 @@ def frase_de_referencia(indice, ref):
                       f"description below disagrees with it, the sheet wins, "
                       f"and where the style sheet's sample characters dress "
                       f"or look differently, the cast sheet still wins for "
-                      f"this character's identity and clothing."
+                      f"this character's identity and clothing. What the sheet "
+                      f"does NOT decide is the facial expression: it shows a "
+                      f"resting face only so you know who they are. Their "
+                      f"mouth, eyebrows and eyes in this shot are the ones "
+                      f"this prompt asks for, not the ones on the sheet."
                       + (" Their faces are covered in that sheet and that is "
                          "deliberate: keep every covering on, copy its exact "
                          "shape, markings and colours, and never show the face "
@@ -2382,7 +2559,16 @@ def frase_de_referencia(indice, ref):
                   "whatever that description says, even when none of it appears "
                   "in this image. Do NOT reuse its composition, framing, "
                   "staging or character poses, and never redraw it with a small "
-                  "change.")
+                  "change."
+                # LO QUE NO ES EL SITIO, dicho (catalogo sencillo). En un video
+                # largo una bandera de otro pais, una matricula con letras y
+                # una persona de mas pasaban de un plano al siguiente por esta
+                # foto, leidas como «el sitio». Solo con la marca: el prompt de
+                # un video de antes no cambia ni una letra.
+                + (" Take ONLY the architecture from it: never carry over any "
+                   "person, sign, flag, poster, plate, label, lettering, screen "
+                   "content or loose object that appears in it."
+                   if ref.get("sencillo") else ""))
         # No hay «else». Una referencia de continuidad de OTRO sitio ya no se
         # adjunta (ver _referencias_escena): decirle con palabras que no
         # copie el contenido de una imagen no basta, y el precio de que no
@@ -2503,6 +2689,64 @@ ULTIMA_PALABRA_ROTULOS = (
     "caption or a label, not even a plausible one.")
 
 
+#: EL CUADRO LIMPIO, en los planos de un catalogo sencillo.
+#:
+#: De las 117 notas del repaso de un video largo (30-09-2026, 281 planos), las
+#: que no eran de caras eran casi todas COSAS QUE SOBRABAN, y ninguna la habia
+#: pedido el plano de forma que el generador pudiera saber que era de mas: dos
+#: personas al fondo de un cine, tres monigotes en un diagrama, cinco
+#: estatuillas donde bastaba una, dos telefonos, un cable doble, gente
+#: atravesando las mesas en un cenital, un cartel de precio, una matricula con
+#: letras que nadie pidio y una bandera de otro pais en una rueda de prensa,
+#: que el sitio describia como «two flags» sin decir de donde. Cada elemento de
+#: mas es una ocasion de dibujar algo mal, y lo que sale mal en un plano pasa al
+#: siguiente por la continuidad.
+#:
+#: Va detras de la escena y delante de la ultima palabra sobre las letras, que
+#: es la otra ley que tiene que pesar al final.
+#:
+#: GENTE, SI; RELLENO, NO (corregido con el dueno el mismo 01-10). La primera
+#: version ponia «dos personas como mucho» y dejaba las multitudes en «unas
+#: pocas figuras simples»: demasiado. Una escena puede tener hasta unas diez
+#: personas y hay videos que necesitan multitudes. Lo que sobraba era la gente
+#: que NADIE habia pedido; y lo que salia mal en las multitudes era el detalle
+#: (manos, telefonos, cables), no el numero. Asi que: nadie de relleno, y la
+#: multitud que pida la escena, con menos detalle cuanto mas atras.
+SENCILLEZ = (
+    "KEEP THE FRAME CLEAN, because every element nobody asked for is one more "
+    "chance to draw something wrong: draw what this prompt names and nothing "
+    "incidental, with calm empty space where nothing is happening. No people "
+    "the scene does not call for: no passers-by or figures added as filler. "
+    "When the scene does have many people or a crowd, draw it: up to about ten "
+    "figures in full detail, and anyone beyond that or far in the background "
+    "as simpler, less detailed shapes with nothing in their hands. Every "
+    "object appears ONCE unless this prompt gives a number or the scene needs "
+    "several. No incidental signs, plates, labels, price tags, flags, "
+    "posters or banners. No tangled cables or cords: at most one simple line "
+    "where the scene needs one. Every person is whole and clearly separate "
+    "from the furniture: nobody merges into, passes through or is cut by a "
+    "desk, a table or another person.")
+
+#: DOS PERSONAS NO SON LA MISMA. En ese video largo el protagonista y su socio
+#: salieron gemelos, y el protagonista salio dos veces en el mismo despacho: el
+#: generador copia la hoja que tiene delante a todo el que sale. Solo en planos
+#: con dos o mas personas.
+DISTINTOS = (
+    "The people in this shot are DIFFERENT people and must look clearly "
+    "different from each other: never two figures with the same face, hair and "
+    "clothes. Anyone this prompt does not name is a stranger, drawn unlike any "
+    "of the named characters.")
+
+
+def _varias_personas(escena, fichas_reparto=None):
+    """Si en este plano sale mas de una persona: dos del reparto o un grupo."""
+    gente = list((escena or {}).get("personajes") or [])
+    if len(gente) > 1:
+        return True
+    return any(((fichas_reparto or {}).get(f"asset:{q}") or {}).get("grupo")
+               for q in gente)
+
+
 def _ultima_palabra_idioma(idioma):
     """Y EN QUE IDIOMA, dicho en la ultima linea. -> str o ""
 
@@ -2578,6 +2822,12 @@ def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
             f"same production, laid side by side only so they fit in one image. "
             f"Copy the drawing style they share -- line weight, palette, shapes, "
             f"proportions -- and never their content. "
+            # EL GESTO DE LA LAMINA TAMPOCO ES ESTILO (30-09-2026). La lamina de
+            # un canal traia cinco personajes de muestra y cuatro estaban
+            # sorprendidos, enfadados, tristes o preocupados: viaja a TODOS los
+            # planos y empujaba las caras hacia ahi.
+            f"The facial expressions of its sample characters are content too, "
+            f"not style: never copy them. "
             f"Its grid layout is NOT part of the style and must NOT be "
             f"reproduced: your output is ONE single full-bleed illustration of "
             f"one moment. Never draw a grid, a collage, a contact sheet, panels, "
@@ -2657,6 +2907,12 @@ def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
     if escena.get("luz"):
         lineas.append(f"Time of day and lighting: {escena['luz']}. This is "
                       f"mandatory and must not drift from the previous shot.")
+    if escena.get("sencillo"):
+        # el cuadro limpio y la gente distinguible: solo los planos de un
+        # catalogo sencillo, asi que ningun prompt de un video hecho cambia
+        lineas.append(SENCILLEZ)
+        if _varias_personas(escena, fichas_reparto):
+            lineas.append(DISTINTOS)
     lineas.append(ULTIMA_PALABRA_ROTULOS)
     cierre_idioma = _ultima_palabra_idioma(idioma)
     if cierre_idioma:
@@ -2716,6 +2972,17 @@ def _bloque_feedback(feedback):
     Y por eso la ultima frase importa tanto como la primera: lo que la nota NO
     menciona se queda como estaba. Sin ella, una correccion de dos palabras
     borraria el plano entero.
+
+    Y LO QUE LA NOTA NO PUEDE CAMBIAR ES COMO SE DIBUJA A NADIE (30-09-2026).
+    «Gana a todo» se leia tambien contra la hoja de personaje: en un video se
+    pidio a un personaje «señalando hacia abajo» y salio con una mano realista y
+    el dedo estirado, cuando en su hoja los brazos son trazos sin manos.
+    Hicieron falta otras tres notas («quita la mano», «brazos modo stickman»,
+    «ponle los brazos modo palo») para volver a la hoja. La nota decide QUE
+    hace; la hoja sigue decidiendo COMO es.
+
+    Solo entra en los planos con nota, que son los que se estan rehaciendo: los
+    demas prompts no cambian ni una letra.
     """
     return ("The reviewer looked at the previous image of this exact shot and "
             "REJECTED it. Everything described above -- the scene, the action, "
@@ -2726,7 +2993,11 @@ def _bloque_feedback(feedback):
             "subject, the objects on screen, the composition and the shot type: "
             "where they disagree, draw what the note says and drop what the "
             "description said. Whatever the note does not mention stays exactly "
-            f"as described above. The reviewer's note is: {feedback}.")
+            "as described above. The one thing the note never changes is how a "
+            "character is DRAWN: their cast sheet still fixes their body, face "
+            "and limbs, so if the sheet draws arms as plain strokes with no "
+            "hands, pointing, waving or holding is done with that stroke and "
+            f"no hand or finger appears. The reviewer's note is: {feedback}.")
 
 
 #: LO QUE ALGUIEN SE PONE PARA TAPARSE LA CARA. En las dos lenguas en que se
@@ -2866,10 +3137,18 @@ def _prompt_reparto(ficha, estilo):
                       "shadowed, blurred or blown out by glare: whatever is "
                       "there must be drawn in full detail and be recognisable at "
                       "a glance. Where a face IS visible, draw eyes, eyebrows and "
-                      "mouth with a neutral and serious expression.")
+                      "mouth with a calm, relaxed resting expression -- neither "
+                      "stern nor smiling.")
     else:
+        # EL GESTO DE LA HOJA SE HEREDA. Pedia «a neutral and serious
+        # expression», y como la hoja viaja a todos los planos de ese personaje,
+        # su cara seria salia en todos (30-09-2026). En reposo y relajada es lo
+        # que menos arrastra: el gesto lo pone cada plano. Solo cambia el prompt
+        # de las hojas que se dibujen a partir de ahora; las que hay se quedan.
         lineas.append("Every face must be fully visible and unobstructed: draw eyes, "
-                      "eyebrows and mouth, with a neutral and serious expression. Never "
+                      "eyebrows and mouth, with a calm, relaxed resting expression -- "
+                      "neither stern nor smiling, because every shot will give the "
+                      "character its own expression. Never "
                       "cover a face with glare, reflection, shadow, hair, screens, "
                       "masks or sunglasses. The face is what this sheet exists to fix: "
                       "a character drawn without one cannot be kept consistent.")
@@ -2933,7 +3212,7 @@ def _adoptar(nombre, p, firma=None, subcarpetas=("", "escenas", "storyboard", "r
 
 
 def _producir_imagen(nombre, prompt, referencias, destino, p, rehacer=False,
-                     tamano=None):
+                     tamano=None, prompt_seguro=None):
     """Arte adoptado -> cache -> API. Devuelve como se resolvio y el coste.
 
     'rehacer' es el boton de "esta no me gusta": salta el arte adoptado y la
@@ -2943,6 +3222,15 @@ def _producir_imagen(nombre, prompt, referencias, destino, p, rehacer=False,
     `tamano` es el del motor de imagen ('apaisado' | 'vertical'). Los planos lo
     traen del formato del plan; las hojas de personaje y las piezas van siempre
     apaisadas, que es como se leen mejor como referencia.
+
+    `prompt_seguro` es el MISMO plano sin la cita de la narracion
+    (`_prompt_sin_narracion`), y solo se usa si OpenAI rechaza el prompt con su
+    filtro de seguridad: un reintento, no dos. La firma y la cache siguen
+    siendo las del prompt de verdad -- la proxima pasada con ese mismo prompt
+    encuentra esta imagen y no vuelve a chocar --, y la ficha dice que se
+    genero sin la cita. Si tambien se rechaza, el error dice QUE plano es: el
+    del motor solo traia el texto de OpenAI, y en una tanda de 300 planos eso
+    no dice donde mirar.
     """
     tamano = tamano or "apaisado"
     firma = medios.huella({"prompt": prompt, "calidad": p["calidad"],
@@ -2974,9 +3262,37 @@ def _producir_imagen(nombre, prompt, referencias, destino, p, rehacer=False,
             return {"origen": "cache", "firma": firma, "coste": 0.0}
 
     imagen = medios.motor("imagen_openai/imagen.py")
+    sin_cita = False
     try:
-        png, meta = imagen.generar(prompt, referencias, quality=p["calidad"],
-                                   tamano=tamano)
+        try:
+            png, meta = imagen.generar(prompt, referencias, quality=p["calidad"],
+                                       tamano=tamano)
+        except RuntimeError as rechazo:
+            if not _rechazo_de_seguridad(rechazo):
+                raise
+            if not prompt_seguro or prompt_seguro == prompt:
+                raise RuntimeError(
+                    f"{nombre}: OpenAI rechaza este plano con su filtro de "
+                    f"seguridad. Cambia su direccion (un nombre propio, una "
+                    f"marca o un personaje con derechos suele ser el motivo) y "
+                    f"vuelve a generar: lo demas no se repaga. {rechazo}") from rechazo
+            print(f"[assets] {nombre}: el filtro de seguridad de OpenAI rechaza "
+                  f"el prompt; se reintenta sin la cita de la narracion",
+                  flush=True)
+            try:
+                png, meta = imagen.generar(prompt_seguro, referencias,
+                                           quality=p["calidad"], tamano=tamano)
+            except RuntimeError as otra:
+                if not _rechazo_de_seguridad(otra):
+                    raise
+                raise RuntimeError(
+                    f"{nombre}: OpenAI rechaza este plano con su filtro de "
+                    f"seguridad, tambien sin la cita de la narracion: lo que "
+                    f"choca esta en su direccion. Cambiala (un nombre propio, "
+                    f"una marca o un personaje con derechos suele ser el "
+                    f"motivo) y vuelve a generar: lo demas no se repaga. "
+                    f"{otra}") from otra
+            sin_cita = True
     except SystemExit as fallo:
         # el motor esta escrito como CLI y aborta con SystemExit (por ejemplo si
         # falta la clave); dentro de un hilo eso no lo captura nadie y el paso
@@ -2986,8 +3302,38 @@ def _producir_imagen(nombre, prompt, referencias, destino, p, rehacer=False,
     with open(destino, "wb") as fh:
         fh.write(png)
     medios.copiar(destino, cacheada)
-    return {"origen": "generada", "firma": firma, "coste": meta["coste"],
-            "segundos": meta["segundos"]}
+    hecho = {"origen": "generada", "firma": firma, "coste": meta["coste"],
+             "segundos": meta["segundos"]}
+    if sin_cita:
+        hecho["sin_cita_narracion"] = True
+        hecho["prompt_enviado"] = prompt_seguro
+    return hecho
+
+
+def _huella_peticion(prompt, referencias, p, tamano):
+    """Lo que se le pide al generador para un plano, SIN su propia imagen. -> str
+
+    Es la firma de la cache menos dos cosas que cambian aunque nadie haya
+    pedido nada distinto:
+
+    - la imagen «rechazada» de una nota de retoque, que es el PNG del propio
+      plano en `trabajo/`. Si la pasada que lo dibujo no se sello (otra cadena
+      la tumbo), la siguiente llevaba como rechazada el dibujo NUEVO, la cache
+      no lo encontraba y se pagaba otra vez retocando el retoque;
+    - lo que reescribe el corrector, que es un modelo y no da dos veces el
+      mismo texto. Por eso el prompt que entra aqui es el de ANTES de corregir.
+
+    Todo lo demas si cuenta: si cambia la nota, la direccion, el estilo, una
+    hoja de personaje o el plano anterior de la cadena, la peticion es otra.
+
+    `referencias` son las fichas ({papel, ruta}), no las rutas sueltas: hace
+    falta el papel para saber cual es la rechazada.
+    """
+    return medios.huella({
+        "prompt": prompt, "calidad": p["calidad"],
+        "tamano": tamano if tamano != "apaisado" else None,
+        "refs": [medios.huella_fichero(r["ruta"]) for r in referencias
+                 if r.get("papel") != "rechazada"]})
 
 
 def _salidas_parciales(plan, resultados, inventario, necesarios, avisar):
@@ -3346,6 +3692,37 @@ def _generar_escenas(plan, dirs, p, trabajo, toca, unidades, resultados, avisar,
                     anteriores=orden_cadena, notas=notas_repaso)
                 nota_texto = _texto_feedback(
                     _ajustes_unidad(p, uid).get("feedback"))
+                tamano_imagen = p2_brief.comun.ficha_formato(
+                    plan.get("formato"))["tamano_imagen"]
+                peticion = _huella_peticion(
+                    _prompt_completo(escena, referencias, p["estilo"],
+                                     feedback=nota_texto,
+                                     idioma=plan.get("idioma") or "",
+                                     formato=plan.get("formato") or "",
+                                     fichas_reparto=plan.get("assets")),
+                    referencias, p, tamano_imagen)
+                # LO QUE YA SE DIBUJO CON ESTA MISMA PETICION SE QUEDA. Pasa
+                # cuando una pasada anterior lo genero y no llego a sellarse
+                # porque otra cadena fallo: el plano sigue obsoleto, la tanda lo
+                # vuelve a pedir, y antes se pagaba otra vez. Visto el
+                # 05-10-2026: con un plano que el filtro de OpenAI rechazaba
+                # siempre, cada «Montar video» volvia a pagar los otros dos
+                # planos con nota de esa tanda, y cada intento retocaba el
+                # retoque anterior. El «rehacer» de la pantalla (`forzar`) no
+                # pasa por aqui: ese si pide otra imagen a proposito. Y una
+                # ficha de antes, sin `peticion`, se comporta como siempre.
+                previa = ((medios.leer_json(ficha_json, {}) or {})
+                          if hecho and not forzar else {})
+                if previa.get("peticion") == peticion:
+                    print(f"[assets] {sid}: ya estaba dibujado con esta misma "
+                          f"peticion en una pasada sin sellar; se queda sin "
+                          f"pagarlo otra vez", flush=True)
+                    previas[sid] = destino
+                    orden_cadena.append(sid)
+                    with cerrojo:
+                        resultados[uid] = dict(previa, origen="conservado",
+                                               reaprovechada=True)
+                    continue
                 escena_final = escena
                 corregido = None
                 # EL CORRECTOR, solo cuando hay nota y alguien ha pedido rehacer
@@ -3399,8 +3776,14 @@ def _generar_escenas(plan, dirs, p, trabajo, toca, unidades, resultados, avisar,
                                         # al tamano del formato del video: un
                                         # plano vertical se PIDE vertical, no
                                         # se recorta de uno apaisado
-                                        tamano=p2_brief.comun.ficha_formato(
-                                            plan.get("formato"))["tamano_imagen"])
+                                        tamano=tamano_imagen,
+                                        # solo si el filtro de seguridad
+                                        # rechaza el de verdad
+                                        prompt_seguro=_prompt_sin_narracion(
+                                            prompt, escena_final))
+                # en la ficha, para que la pasada siguiente sepa si se le pide
+                # lo mismo aunque esta no llegue a sellarse
+                meta = dict(meta, peticion=peticion)
                 if corregido:
                     meta = dict(meta, corrector={
                         k: corregido.get(k) for k in
@@ -3827,6 +4210,18 @@ def continuidad_de(escena, anteriores, por_id, cuantos=1):
     dos imagenes diciendo «esto es lo que hay en esta habitacion» contra los 236
     caracteres de la linea del plano, y de ahi salen los cinco angulos de la
     misma factura.
+
+    EN UN CATALOGO SENCILLO, EL PRIMERO DEL SITIO Y NO EL ULTIMO (01-10-2026).
+    En cadena, lo que sale mal en un plano pasa a TODOS los que vienen detras en
+    ese sitio: en un video largo, una bandera de otro pais salio en cuatro
+    planos seguidos de la misma rueda de prensa, una matricula con letras
+    inventadas en tres, y el protagonista dos veces en el mismo despacho en
+    otros cuatro. Cada uno costo una nota por plano. Apoyandose siempre en el
+    primero, las derivas no se van sumando de plano en plano y el sitio se
+    sigue reconociendo, que es para lo unico que esta esta foto; y lo que no se
+    debe heredar ni del primero (gente, letreros, banderas, objetos sueltos) lo
+    dice su frase (`frase_de_referencia`, con `sencillo`). Sin la marca, el de
+    siempre: el ultimo.
     """
     if not escena.get("set"):
         return []
@@ -3835,6 +4230,8 @@ def continuidad_de(escena, anteriores, por_id, cuantos=1):
     mismos = [sid for sid in (anteriores or [])
               if (por_id.get(sid) or {}).get("set") == escena["set"]
               and not _en_otro_sitio(por_id.get(sid))]
+    if escena.get("sencillo") and cuantos:
+        return mismos[:cuantos]
     return mismos[-cuantos:] if cuantos else mismos
 
 
@@ -3901,6 +4298,9 @@ def _referencias_escena(escena, plan, dirs, p, cache, hechas, anteriores=None,
         if escena.get("set") and anterior.get("set") == escena.get("set"):
             ficha["mismo_set"] = True
             ficha["desde"] = anterior.get("camara") or ""
+            if escena.get("sencillo"):
+                # de esa foto, solo la arquitectura (ver frase_de_referencia)
+                ficha["sencillo"] = True
         referencias.append(ficha)
     # LAS DE LA NOTA VAN LAS ULTIMAS, pegadas al bloque de feedback --que es lo
     # ultimo del prompt y la posicion mas fuerte-- y detras de las de
@@ -4447,6 +4847,9 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
 
     generadas = sum(1 for r in resultados.values() if r.get("origen") == "generada")
     camaras = plan["informe"]["camaras"]
+    # los planos que se han quedado sin dirigir en un video dirigido: antes no
+    # los contaba nadie (ver `planificar`)
+    sin_dirigir = plan["informe"].get("sin_dirigir") or []
     salidas = {
         "plan": "plan.json",
         "escenas": "escenas",
@@ -4464,7 +4867,11 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
             f"{len(escenas)} planos, {len(necesarios)} assets, "
             f"{camaras['cartas_distintas']} clases de encuadre "
             f"({camaras['planos_repetidos']} seguidos de la misma familia), "
-            f"{generadas} imagenes nuevas, {coste:.3f} USD"),
+            f"{generadas} imagenes nuevas, {coste:.3f} USD"
+            + (f"; {len(sin_dirigir)} plano(s) sin dirigir en un video "
+               f"dirigido: {', '.join(sin_dirigir[:6])}"
+               + ("…" if len(sin_dirigir) > 6 else "")
+               if sin_dirigir else "")),
     }
     avisar(1.0, salidas["resumen"])
     # Los planos que este recorte ha dejado fuera. Van en el resultado para que
@@ -4567,8 +4974,52 @@ def escenas_del_set(plan, set_nombre):
     return [e["id"] for e in plan.get("escenas") or [] if e.get("set") == set_nombre]
 
 
+def reubicar_cartelas(estado, plan, paso="assets"):
+    """La cartela de un plano ABSORBIDO pasa al plano que la lleva. -> [unidades]
 
+    EL FALLO QUE CIERRA (un video largo, 28-09-2026). El plan de cartelas decide
+    cada una contra el texto de un plano y la guarda EN ESE PLANO
+    (`unidades["escena:S060"]["cartela"]`, con su `ancla`). Si sus palabras
+    empiezan antes, `_fundir_cartelas` la lleva HACIA ATRAS: el hogar pasa a ser
+    S059 y S060 se funde dentro y deja de existir. Al completar, el plano que ya
+    no existe se RETIRA -- y retirar borra sus params enteros, cartela
+    incluida --. En la pasada siguiente la cartela ya no estaba en ningun sitio:
+    se perdieron cinco de veinte sin un solo aviso, y sus tramos volvieron a ser
+    diez planos que el director no habia visto nunca. Uno de ellos se dibujo con
+    la accion del tramo y salio con esa frase pintada como texto encima de una
+    pila de billetes.
 
+    Se llama justo ANTES de completar(), igual que `propagar_dependencias`: asi
+    la version guarda ya la decision en su sitio y el retiro de despues no se
+    lleva nada que no fuera suyo. `del_propio_paso` por lo mismo: es lo que el
+    paso acaba de descubrir sobre si mismo, no una edicion de nadie.
+
+    Solo MUEVE lo que ya estaba decidido, y solo si el hogar no tenia la suya:
+    no decide ninguna cartela nueva. La ficha que llega al hogar sigue anclada
+    al texto del plano absorbido, asi que la pasada siguiente la coloca por su
+    texto y no dos veces (ver la guarda de `_marcar_cartelas`).
+    """
+    informe = ((plan or {}).get("informe") or {}).get("cartelas") or {}
+    seguidas = [s for s in (informe.get("seguidas") or []) if isinstance(s, dict)]
+    if not seguidas:
+        return []
+    previos = (estado.params(paso) or {}).get("unidades") or {}
+    cambios = {}
+    for ficha in seguidas:
+        origen = f"escena:{ficha.get('absorbido')}"
+        hogar = f"escena:{ficha.get('cartela')}"
+        decidida = (previos.get(origen) or {}).get("cartela")
+        if not isinstance(decidida, dict) or not decidida.get("plantilla"):
+            continue
+        if hogar in cambios or (previos.get(hogar) or {}).get("cartela"):
+            continue
+        destino = dict(previos.get(hogar) or {})
+        destino["cartela"] = copy.deepcopy(decidida)
+        cambios[hogar] = destino
+    if not cambios:
+        return []
+    estado.actualizar_params(paso, {"unidades": cambios}, del_propio_paso=True)
+    return sorted(cambios)
 
 
 def propagar_dependencias(estado, dependencias=None, paso="assets"):

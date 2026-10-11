@@ -78,8 +78,13 @@ PROPUESTAS = "_propuestas"
 EJES = {
     "cara": {
         "titulo": "Una cara de cerca",
+        # «neutral serious expression» decia aqui, y esta cara acaba en la
+        # lamina que viaja a TODOS los planos del canal: el gesto serio se
+        # colaba en el estilo (30-09-2026). Tranquila y relajada no empuja
+        # hacia ningun lado; la expresion la pone cada plano. Solo cambia las
+        # laminas que se dibujen a partir de ahora: las aprobadas se quedan.
         "prompt": ("A single character seen in close-up, head and shoulders, "
-                   "front view, neutral serious expression, plain flat "
+                   "front view, calm relaxed natural expression, plain flat "
                    "background. Nothing else in the frame."),
     },
     "cuerpos": {
@@ -87,10 +92,18 @@ EJES = {
         "prompt": ("Three ordinary people standing side by side, full body, "
                    "front view, plain flat background, relaxed neutral poses."),
     },
+    # «NOTHING ELSE», DICHO EN CADA EJE (01-10-2026). Las imagenes del canal que
+    # acompanan a este prompt pueden venir llenas de gente, y entonces el
+    # generador las copia aunque el eje pida otra cosa: en un estilo, la
+    # «cara», el «objeto» y el «diagrama» salieron como plazas con doce a veinte
+    # personas, y esas laminas viajan en CADA plano. Por eso cada eje dice
+    # ahora lo que NO lleva.
     "interior": {
         "titulo": "Un interior general",
-        "prompt": ("A wide shot of an ordinary interior room with furniture, "
-                   "seen from a corner, with no people in it."),
+        "prompt": ("A wide shot of a simple, uncluttered interior room seen from "
+                   "a corner: plain walls, a floor, one window and only two or "
+                   "three large pieces of furniture, with calm empty space. No "
+                   "people and no small objects."),
     },
     "exterior": {
         "titulo": "Un exterior general",
@@ -100,7 +113,9 @@ EJES = {
     "objeto": {
         "titulo": "Un objeto de cerca",
         "prompt": ("A close-up of a single everyday object resting on a flat "
-                   "surface, filling most of the frame, plain background."),
+                   "surface, filling most of the frame, plain background. "
+                   "Nothing else in the frame: no people, no street, no other "
+                   "objects."),
     },
     # CON SUS ETIQUETAS, que es lo que hace que un diagrama sea un diagrama.
     # Decia "with no text or labels of any kind" y salian tres cajas vacias: la
@@ -110,7 +125,8 @@ EJES = {
         "titulo": "Un diagrama sencillo",
         "prompt": ("A simple schematic diagram of three boxes connected by "
                    "arrows on a plain background, drawn in the same style. Each "
-                   "box holds a simple icon and one short word under it."),
+                   "box holds a simple icon and one short word under it. No "
+                   "people, no street and no scenery: only the diagram."),
     },
 }
 
