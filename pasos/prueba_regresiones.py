@@ -402,18 +402,41 @@ def prueba_previa():
 
 def prueba_lotes():
     seccion("8] los lotes de render caben en la memoria")
+    # La memoria LIBRE se fija tambien: si no, estas cuentas dependerian de lo
+    # que tenga abierto la maquina que corre la suite.
     with mock.patch.dict(os.environ, {"ESTUDIO_LOTES": "8"}), \
-            mock.patch.object(p8_render, "_memoria_total_gb", return_value=8.0):
+            mock.patch.object(p8_render, "_memoria_total_gb", return_value=8.0), \
+            mock.patch.object(p8_render, "_memoria_libre_gb", return_value=7.0):
         igual(p8_render._cuantos_lotes({}, 300), 2,
               "8 nucleos pedidos con 8 GB: caben 2")
         igual(p8_render._cuantos_lotes({"lotes": 6}, 300), 6,
               "lo que se pide a mano para un video manda")
     with mock.patch.dict(os.environ, {"ESTUDIO_LOTES": "8"}), \
-            mock.patch.object(p8_render, "_memoria_total_gb", return_value=32.0):
+            mock.patch.object(p8_render, "_memoria_total_gb", return_value=32.0), \
+            mock.patch.object(p8_render, "_memoria_libre_gb", return_value=29.0):
         igual(p8_render._cuantos_lotes({}, 300), 8, "con 32 GB caben los 8")
+    # LA QUE QUEDA LIBRE AL EMPEZAR TAMBIEN MANDA. Medido el 12-10-2026: una
+    # maquina de 30 GB con 12 libres pedia once lotes y Edge dejo de arrancar a
+    # media tanda («The paging file is too small»).
+    with mock.patch.dict(os.environ, {"ESTUDIO_LOTES": "16"}), \
+            mock.patch.object(p8_render, "_memoria_total_gb", return_value=30.0), \
+            mock.patch.object(p8_render, "_memoria_libre_gb", return_value=12.6):
+        igual(p8_render._cuantos_lotes({}, 300), 4,
+              "30 GB con 12,6 libres: caben 4, no 11")
+    with mock.patch.object(p8_render, "_memoria_total_gb", return_value=30.0), \
+            mock.patch.object(p8_render, "_memoria_libre_gb", return_value=0.5):
+        igual(p8_render._tope_por_memoria(), 1,
+              "sin memoria libre se monta igual, de uno en uno")
+    with mock.patch.object(p8_render, "_memoria_total_gb", return_value=30.0), \
+            mock.patch.object(p8_render, "_memoria_libre_gb", return_value=None):
+        igual(p8_render._tope_por_memoria(), 11,
+              "sin saber la libre, manda la total")
     with mock.patch.object(p8_render, "_memoria_total_gb", return_value=None):
         comprobar(p8_render._tope_por_memoria() == p8_render.MAX_LOTES,
                   "sin saber la memoria no se limita nada")
+    libre = p8_render._memoria_libre_gb()
+    comprobar(libre is None or libre > 0,
+              f"la memoria libre de esta maquina se puede leer ({libre})")
 
 
 # ------------------------------------------------------------------- 9] guion

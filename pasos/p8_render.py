@@ -775,37 +775,69 @@ GB_POR_LOTE = 2.4
 #: Lo que se deja para todo lo demas (el sistema, el servicio, el navegador de
 #: quien mira la pantalla).
 GB_RESERVA = 2.0
+#: Lo que se deja sobre la memoria LIBRE al empezar: lo de alrededor puede crecer
+#: mientras dura el render. Es menos que `GB_RESERVA` porque lo que ya esta en
+#: marcha no cuenta como libre.
+GB_MARGEN_LIBRE = 1.0
+
+
+def _memoria_windows():
+    """El estado de la memoria segun Windows (MEMORYSTATUSEX), o None."""
+    import ctypes                                             # noqa: PLC0415
+
+    class _Memoria(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+    memoria = _Memoria()
+    memoria.dwLength = ctypes.sizeof(_Memoria)
+    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memoria)):
+        return memoria
+    return None
+
+
+def _de_meminfo(campo):
+    """Un campo de /proc/meminfo en GB, o None."""
+    with open("/proc/meminfo", encoding="utf-8") as fh:
+        for linea in fh:
+            if linea.startswith(campo + ":"):
+                return int(linea.split()[1]) / 1024 ** 2
+    return None
 
 
 def _memoria_total_gb():
     """La memoria fisica de la maquina en GB, o None si no se sabe."""
     try:
         if os.name == "nt":
-            import ctypes                                     # noqa: PLC0415
-
-            class _Memoria(ctypes.Structure):
-                _fields_ = [("dwLength", ctypes.c_ulong),
-                            ("dwMemoryLoad", ctypes.c_ulong),
-                            ("ullTotalPhys", ctypes.c_ulonglong),
-                            ("ullAvailPhys", ctypes.c_ulonglong),
-                            ("ullTotalPageFile", ctypes.c_ulonglong),
-                            ("ullAvailPageFile", ctypes.c_ulonglong),
-                            ("ullTotalVirtual", ctypes.c_ulonglong),
-                            ("ullAvailVirtual", ctypes.c_ulonglong),
-                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-
-            memoria = _Memoria()
-            memoria.dwLength = ctypes.sizeof(_Memoria)
-            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memoria)):
-                return memoria.ullTotalPhys / 1024 ** 3
-            return None
-        with open("/proc/meminfo", encoding="utf-8") as fh:
-            for linea in fh:
-                if linea.startswith("MemTotal:"):
-                    return int(linea.split()[1]) / 1024 ** 2
+            memoria = _memoria_windows()
+            return memoria.ullTotalPhys / 1024 ** 3 if memoria else None
+        return _de_meminfo("MemTotal")
     except Exception:                                         # noqa: BLE001
         return None
-    return None
+
+
+def _memoria_libre_gb():
+    """La memoria que se puede pedir AHORA, en GB, o None si no se sabe.
+
+    En Linux, `MemAvailable` (la cache que se puede soltar cuenta como libre).
+    En Windows, lo que queda por COMPROMETER --el limite menos lo comprometido,
+    `ullAvailPageFile`--, que es lo que se agota cuando Edge no llega a arrancar
+    con «The paging file is too small» y un ffmpeg muere sin memoria.
+    """
+    try:
+        if os.name == "nt":
+            memoria = _memoria_windows()
+            return memoria.ullAvailPageFile / 1024 ** 3 if memoria else None
+        return _de_meminfo("MemAvailable")
+    except Exception:                                         # noqa: BLE001
+        return None
 
 
 def _tope_por_memoria():
@@ -815,11 +847,21 @@ def _tope_por_memoria():
     Hostinger cuadra (4 GB por nucleo), pero un VPS de 4 nucleos y 8 GB pediria
     cuatro lotes, unos 9,5 GB en el peor momento, y el render moriria por
     memoria a media tanda. Sin saber la memoria no se limita nada.
+
+    Y CON LA QUE QUEDA LIBRE AL EMPEZAR, no solo con la que tiene la maquina.
+    Con la total, un ordenador de 30 GB con 12 libres pedia once lotes: Edge
+    dejo de arrancar a media tanda («The paging file is too small») y el render
+    murio. Un VPS dedicado al estudio tiene libre casi toda la suya y no lo
+    nota; uno que comparte maquina con otras cosas, si.
     """
     total = _memoria_total_gb()
     if not total:
         return MAX_LOTES
-    return max(1, int((total - GB_RESERVA) // GB_POR_LOTE))
+    tope = max(1, int((total - GB_RESERVA) // GB_POR_LOTE))
+    libre = _memoria_libre_gb()
+    if libre:
+        tope = min(tope, max(1, int((libre - GB_MARGEN_LIBRE) // GB_POR_LOTE)))
+    return tope
 
 
 def _cuantos_lotes(p, cuantos_planos):
