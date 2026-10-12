@@ -6059,12 +6059,16 @@ function vistaElegidoLight() {
         }, 'Empezar otro'))));
   }
 
+  /* EL COSTE DE AL LADO DEL BOTÓN, creado aquí arriba para que la duración lo
+     ponga al día. Se pintaba una vez, con la duración de partida, y no se
+     movía: con 45 segundos o con diez minutos seguía prometiendo lo de cuatro. */
+  const aviso = h('div', { clase: 'pista' });
   caja.appendChild(bloqueLight('El vídeo', 'cómo se llama y cuánto dura',
     campoTexto('Nombre', e.nombre,
       v => { e.nombre = v; },
       { pista: 'La crisis del agua en el sur', ayuda: 'Es el nombre del proyecto y '
-        + 'lo que el documentalista lee como «de qué va este vídeo».' }),
-    duracionLight(e),
+        + 'lo que el guionista lee como «de qué va este vídeo».' }),
+    duracionLight(e, undefined, () => pintarCosteDelEncargoLight(e, aviso)),
     selectorFormato(e.formato, v => { e.formato = v; })));
 
   caja.appendChild(bloqueLight('El material',
@@ -6089,7 +6093,6 @@ function vistaElegidoLight() {
     'cuándo se presenta y qué le pides a quien lo ve',
     bloqueCTA(e.cta, { repintar: pintarLight })));
 
-  const aviso = h('div', { clase: 'pista' });
   const boton = h('button', {
     clase: 'primario grande',
     onclick: () => crearYGenerarLight(ficha),
@@ -6134,8 +6137,9 @@ function formatoDelVideo() {
 
 /* `estilo` es el del vídeo cuando ya existe (el encargo de un vídeo abierto);
    sin él se estima con el estilo elegido en la galería, que es el de un vídeo
-   que se está creando. */
-function duracionLight(e, estilo) {
+   que se está creando. `alCambiar`, si lo hay, se llama con cada duración
+   nueva: es lo que pone al día el coste de al lado del botón. */
+function duracionLight(e, estilo, alCambiar) {
   const linea = h('div', { clase: 'ritmo-linea' }, '…');
   const numero = h('input', {
     type: 'number', min: 30, max: 3600, step: 10, value: e.duracion_objetivo_s,
@@ -6150,6 +6154,7 @@ function duracionLight(e, estilo) {
     numero.value = e.duracion_objetivo_s;
     barra.value = Math.min(1800, Math.max(60, e.duracion_objetivo_s));
     refrescarEstimacionLight(e, linea, estilo);
+    if (alCambiar) alCambiar();
   };
   barra.addEventListener('input', () => mover(barra.value));
   numero.addEventListener('input', () => mover(numero.value));
@@ -6196,8 +6201,13 @@ async function refrescarEstimacionLight(e, nodo, estiloDado) {
    primera por delante: esta no corría nunca y el hueco de al lado del botón se
    quedaba vacío para siempre. No daba ningún error --la que sí existe acepta un
    argumento y lo trata como «forzar»-- y por eso llevaba así desde que se
-   escribió. Con nombre propio, la cifra vuelve a salir. */
+   escribió. Con nombre propio, la cifra vuelve a salir.
+
+   Y MANDA LA ÚLTIMA: el deslizador de la duración pide una por paso, y una
+   respuesta lenta de una duración vieja no puede pisar la de ahora. */
+let COSTE_DEL_ENCARGO_PEDIDO = 0;
 async function pintarCosteDelEncargoLight(e, nodo) {
+  const turno = ++COSTE_DEL_ENCARGO_PEDIDO;
   const estilo = fichaLight(APP.light.abierto) || estiloElegido() || {};
   const datos = (estilo.datos || {});
   try {
@@ -6211,9 +6221,12 @@ async function pintarCosteDelEncargoLight(e, nodo) {
       max_s: (datos.estilo || {}).max_s,
       calidad: (datos.estilo || {}).calidad,
     });
+    if (turno !== COSTE_DEL_ENCARGO_PEDIDO) return;
     vaciar(nodo).append(`El vídeo entero: ${textoDeCoste(ficha)}. `
       + 'Puede salir algo más corto o más largo que el objetivo.');
-  } catch (err) { vaciar(nodo).append(''); }
+  } catch (err) {
+    if (turno === COSTE_DEL_ENCARGO_PEDIDO) vaciar(nodo).append('');
+  }
 }
 
 /* Los planos, las imágenes que se pagan y el dólar. `imagenes_hechas` sale

@@ -1395,9 +1395,13 @@ def _pedir(instruccion, opciones, trabajo, avisar, tramo, mensaje, prevision,
             avisar(hasta, "revisando lo que ha devuelto")
             pendientes = list(motivos_mejor)
             if mejor[2] != intento:
+                # CON UN EMPATE se queda el primero, y se dice que no mejoro: «con
+                # mas problemas (1 frente a 1)» se leia como un fallo de cuentas
+                como = ("con mas problemas" if len(motivos) > len(motivos_mejor)
+                        else "sin arreglar nada")
                 pendientes.append(
                     f"se entrega el intento {mejor[2]} y no el {intento}: el "
-                    f"ultimo volvio con mas problemas ({len(motivos)} frente a "
+                    f"ultimo volvio {como} ({len(motivos)} frente a "
                     f"{len(motivos_mejor)})")
             return mejor[0], mejor[1], intento, pendientes
         correcciones = motivos
