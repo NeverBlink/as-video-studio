@@ -9464,9 +9464,10 @@ function camposEstiloLight() {
   // `retomarTallerLight`): se dice, para que nadie las vuelva a subir.
   const delTaller = APP.light.taller ? Number(APP.light.imagenesDelTaller) || 0 : 0;
   if (delTaller) {
-    caja.appendChild(h('div', { clase: 'meta' },
-      `Las ${delTaller} imágenes de este intento siguen guardadas: si no subes `
-      + 'otras, se usan esas.'));
+    caja.appendChild(h('div', { clase: 'meta' }, delTaller === 1
+      ? 'La imagen de este intento sigue guardada: si no subes otras, se usa esa.'
+      : `Las ${delTaller} imágenes de este intento siguen guardadas: si no subes `
+        + 'otras, se usan esas.'));
   }
   caja.appendChild(campoArea('Indicaciones (opcional)', e.estilo_prompt,
     v => { e.estilo_prompt = v; tocarEncargoLight(); },

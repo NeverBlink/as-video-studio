@@ -132,6 +132,30 @@ def probar_plan():
           light.imagenes_de_parte("estilo"),
           "rehacer el estilo grafico si paga: se redibujan sus referencias")
 
+    # LA GUIA SE MIDE CON LAS IMAGENES QUE HAY. Iba siempre con el tope (24), y
+    # su tiempo se apunta con las que se miraron de verdad: con una guia de UNA
+    # imagen ya medida, el historial lo escalaba a 24 veces y retomar ese
+    # estilo --o crear el siguiente-- prometia tres cuartos de hora.
+    guia = next(t for t in plan["tareas"] if t["id"] == "guia")
+    igual(guia["tamano"], len(ENCARGO_VIDEO["estilo_imagenes"]),
+          "la guia se mide con las imagenes del encargo, no con las que caben")
+    previo = os.environ.get("ESTUDIO_ESTADISTICAS")
+    carpeta = tempfile.mkdtemp(prefix="prueba_light_plan_")
+    os.environ["ESTUDIO_ESTADISTICAS"] = os.path.join(carpeta, "estadisticas.json")
+    try:
+        light.estadisticas.anotar("guia_estilo", 110.0, tamano=1)
+        una = light.validar_encargo(dict(ENCARGO_VIDEO, estilo_imagenes=["a.png"]))
+        guia = next(t for t in light.plan_de(una)["tareas"] if t["id"] == "guia")
+        ok(guia["segundos"] < 300,
+           f"con una guia de una imagen medida en 110 s, la siguiente no promete "
+           f"{guia['segundos']:.0f} s")
+    finally:
+        if previo is None:
+            os.environ.pop("ESTUDIO_ESTADISTICAS", None)
+        else:
+            os.environ["ESTUDIO_ESTADISTICAS"] = previo
+        shutil.rmtree(carpeta, ignore_errors=True)
+
 
 def probar_ritmo():
     """El deslizador: cinco escalones que de verdad escalan, y sus dos cifras."""

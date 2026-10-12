@@ -618,8 +618,16 @@ def tareas_de(encargo, solo=None):
 
     `solo` recorta a un subconjunto (los tres botones de feedback), arrastrando
     lo que dependa de ello dentro del propio subconjunto.
+
+    LA GUIA SE MIDE CON LAS IMAGENES QUE HAY, no con las 24 que caben. Su tiempo
+    se apunta con las que se miraron de verdad (`estilo.PASO_GUIA`), y pedido
+    para 24 el historial escalaba la medida de una sola imagen a 24 veces: un
+    estilo de una imagen, en cuanto el estudio habia medido una guia, prometia
+    tres cuartos de hora al crear el siguiente o al retomarlo.
     """
-    tareas = list(TAREAS)
+    imagenes = len((encargo or {}).get("estilo_imagenes") or [])
+    tareas = [{**t, "tamano": imagenes} if t["id"] == "guia" and imagenes else t
+              for t in TAREAS]
     if solo is not None:
         pedidas = set(solo)
         tareas = [t for t in tareas if t["id"] in pedidas]
