@@ -1953,7 +1953,18 @@ def _correr_regrabar(avisar, ctx, seccion_id, peticion, ajuste):
     # volvia a grabar la frase vieja: la unica forma de que la correccion
     # llegara era pedir el guion entero otra vez. Es el mismo cajon y la misma
     # regla que `p4_voz.cargar_guion`.
-    bloques = p4.ediciones_a_mano(ctx.proyecto, bloques)
+    #
+    # PERO SOLO LAS DE ESTE TRAMO. La toma cosida apunta en su meta el texto de
+    # TODOS los bloques, y con las ediciones de otros tramos puestas diria que
+    # esos bloques ya dicen su texto nuevo cuando su audio sigue siendo el
+    # viejo: dejarian de verse como «editado, sin grabar» y nadie los
+    # regrabaria. Los demas, con el texto que de verdad suena.
+    editados = {b["id"]: b for b in p4.ediciones_a_mano(
+        ctx.proyecto, [dict(b) for b in bloques])}
+    dentro = set(next((s.get("bloques") or [] for s in (meta.get("secciones") or [])
+                       if s.get("id") == seccion_id), []))
+    bloques = [editados.get(b["id"], b) if b["id"] in dentro else b
+               for b in bloques]
     cfg = p4.resolver_params(p4.params_con_idioma(
         ctx.proyecto, ctx.estado.params("voz") or {}))
     destino = PASOS_MODULOS.comun.preparar_trabajo(ctx.proyecto, "voz")

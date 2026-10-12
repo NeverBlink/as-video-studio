@@ -541,3 +541,41 @@ def prueba_retencion(carpeta):
     igual(len(comunes), estadisticas.MUESTRAS_POR_AJUSTE,
           f"y del ajuste usado se guardan las ultimas {estadisticas.MUESTRAS_POR_AJUSTE}")
 
+
+def main():
+    # ESTA SUITE NO CORRIA NADA: al separar esta version de la grande se quedo
+    # sin su `main`, y `pruebas.ps1` la daba por buena con la salida vacia. Son
+    # las mismas pruebas de siempre, sin las de las integraciones (que aqui no
+    # existen).
+    carpeta = tempfile.mkdtemp(prefix="prueba_ajustes_")
+    previo = os.environ.get("ESTUDIO_ESTADISTICAS")
+    try:
+        prueba_validacion()
+        prueba_tiempo()
+        prueba_orden()
+        prueba_ejecucion()
+        prueba_limite()
+        prueba_cadena()
+        prueba_login()
+        prueba_historico(carpeta)
+        prueba_recomendacion(carpeta)
+        prueba_retencion(carpeta)
+    finally:
+        if previo is None:
+            os.environ.pop("ESTUDIO_ESTADISTICAS", None)
+        else:
+            os.environ["ESTUDIO_ESTADISTICAS"] = previo
+        shutil.rmtree(carpeta, ignore_errors=True)
+
+    print()
+    if FALLOS:
+        print(f"FALLARON {len(FALLOS)} comprobaciones:")
+        for texto in FALLOS:
+            print(f"  - {texto}")
+        return 1
+    print("AJUSTES DEL CLI OK: todas las comprobaciones pasan")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

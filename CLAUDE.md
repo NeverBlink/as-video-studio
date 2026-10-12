@@ -224,6 +224,47 @@ está en la receta no corre, y una pantalla que la ofrece llama a una ruta que y
 no existe. Es exactamente lo que había que arreglar aquí — la interfaz seguía
 pintando el micrófono y el mapa después de que el motor dejara de servirlos.
 
+**Y lo que se quitó deja piezas colgando que ninguna prueba ve.** En octubre de
+2026 una auditoría encontró que el catálogo visual seguía pidiendo `{fijos}` en
+su plantilla (los personajes fijos ya no existían): `KeyError` en TODO vídeo
+nuevo, y nadie lo vio porque crear un estilo fallaba antes. Si quitas algo,
+busca su nombre en las plantillas de texto (`.format`), no solo en el código.
+
+---
+
+## Lo que se arregló en octubre de 2026 y no se deduce del código
+
+Las incidencias de GitHub (crear un estilo fallaba siempre) destaparon una
+tanda de fallos. Lo que hay que saber para no deshacerlo:
+
+- **Las láminas de un estilo se dibujan con las imágenes del canal delante**
+  (`moodboard.dibujar_desde_guia`, montadas en una hoja por
+  `_montar_aportadas`). Antes iban sin adjuntos «a propósito», el motor de
+  imagen lo rechazaba y crear un estilo fallaba siempre. El motor ya sabe
+  dibujar sin adjuntos (`/v1/images/generations`), pero un estilo siempre tiene
+  imágenes: que no vuelvan a quedarse fuera.
+- **La carpeta de un estilo (`banco/presets/<id>`) solo crece.** Cada guardado
+  la rehacía con otro prefijo (`00_cara.png` → `00_00_cara.png`) y borraba la
+  anterior, y los vídeos hechos con él se quedaban sin referencias. Y cada vídeo
+  NUEVO copia las láminas a su propia carpeta (`estilo/referencias`): lo que le
+  pase al estilo después ya no le toca.
+- **Las reglas de dibujo se llaman `motores/reglas/reglas_casa.json`**, y el
+  nombre es a propósito: el `asvs actualizar` de las instalaciones anteriores
+  excluye `reglas.json`, así que con el nombre viejo ninguna regla nueva llegaría
+  nunca a esos estudios. No lo vuelvas a llamar `reglas.json`.
+- **Lo que el motor de imagen aprende del ritmo de cada cuenta** va en
+  `<ESTUDIO_SECRETOS>/limites_aprendidos.json` (por la huella de la clave), no
+  junto al motor: `asvs actualizar` borra lo que haya en el árbol del programa.
+- **La música y los efectos son opcionales de verdad**: sin su clave, sus tareas
+  cuentan como hechas y el MP4 sale sin ellos (`app._falta_clave_de_sonido`).
+- **«Regenerar Vídeo» no redibuja nunca**: en la tanda `render`, la pestaña de
+  imágenes va siempre en `pendientes` (`app._modo_de_la_pestana`).
+- **Una cola de «regenerar con nota» por vídeo, y una tanda de cola a la vez**
+  (`COLAS`, `otraColaEnMarcha` en `web/app.js`); y **un solo montaje a la vez**
+  entre vídeos (`app._exigir_sin_otro_montaje`, 409).
+- **`docs/RETOMAR.md` ya no está en el repositorio**: son notas internas y viven
+  solo en la máquina de quien desarrolla (ver arriba).
+
 ---
 
 ## Las medidas que hay, para no volver a medirlas
@@ -269,7 +310,7 @@ que nunca la fijaron, y regenerarlas se paga.
 powershell -NoProfile -File pruebas.ps1
 ```
 
-Las veintitrés en verde, y las herramientas de análisis sin nada que decir
+Las veinticinco en verde, y las herramientas de análisis sin nada que decir
 (`huerfanas_js` trae dos sospechosas de siempre, `async` y `fallar`, que no son
 llamadas).
 Y si has tocado la interfaz, **ábrela**: una regla de CSS de menos o un bloque

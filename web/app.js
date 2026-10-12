@@ -5787,7 +5787,10 @@ async function contarLaTandaQueMurio(pid) {
       `${API.trabajosVivos()}?proyecto=${encodeURIComponent(pid)}`);
     const generaciones = (datos.trabajos || [])
       .filter(t => String(t.nombre || '').startsWith('generar:'));
-    const ultimo = generaciones[generaciones.length - 1];
+    /* LA MÁS RECIENTE, que es la PRIMERA: el servidor lista del más reciente al
+       más antiguo (`GestorTrabajos.listar`). Se cogía la última, o sea la más
+       vieja: enseñaba un error que ya no valía o escondía el de ahora. */
+    const ultimo = generaciones[0];
     if (!ultimo || ultimo.estado !== 'error') return;
     mostrarError(CLAVE_VIDEO_LIGHT, new Error(
       `la última generación se cortó: ${ultimo.error || 'sin motivo'}`));
@@ -8846,6 +8849,16 @@ function esElVideoAbierto(pid) {
   return !!pid && (APP.light.video || {}).pid === pid;
 }
 
+/* SI OTRA COLA TIENE UNA TANDA EN MARCHA. Las tandas de imágenes van de una en
+   una (dos a la vez tardan el doble por imagen y pierden el registro del
+   gasto), y con una cola por vídeo eso ya no lo garantizaba la cola: se deja un
+   vídeo con su tanda corriendo de fondo, se vuelve a otro con notas en cola, y
+   salían las dos. La del vídeo abierto espera, y sale cuando acaba la otra
+   (`terminarTandaDeCola`). */
+function otraColaEnMarcha(cola) {
+  return Object.values(COLAS).some(c => c !== cola && (c.corriendo.length || c.tid));
+}
+
 
 /* EL ✓ LO DICE LA NOTA, Y LO ESCRIBE EL SERVIDOR (`regenerado`: contra qué
    texto se redibujó). Así sobrevive a recargar, y si luego cambias la nota deja
@@ -8986,6 +8999,9 @@ async function terminarTandaDeCola(cola, tanda, trabajo) {
     repintarVideo();
   }
   soltarCola(cola);
+  // y si la que esperaba era la del vídeo abierto (ver `otraColaEnMarcha`),
+  // ahora le toca a ella
+  if (COLA_IMG !== cola) soltarCola(COLA_IMG);
 }
 
 /* SEGUIR UN TRABAJO SIN PANTALLA: el de la cola de un vídeo que no está
@@ -9049,6 +9065,7 @@ async function soltarCola(cola) {
      cada una se paga: soltarlas solas en un vídeo cerrado es gastar sin que
      nadie lo vea, y sumar tandas a la vez sin que nadie lo haya decidido. */
   if (!esElVideoAbierto(cola.pid)) return;
+  if (otraColaEnMarcha(cola)) return;
   const pid = cola.pid;
   /* UN PLANO, UNA VEZ POR TANDA. Dos notas de la misma imagen son dos
      peticiones, pero no pueden ir en el mismo trabajo: la segunda pisaria el

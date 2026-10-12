@@ -148,19 +148,22 @@ De ahí salen dos reglas que parecen arbitrarias y no lo son:
 powershell -NoProfile -File pruebas.ps1
 ```
 
-Veinticuatro suites, y **por PowerShell y no por bash**: Edge headless devuelve
+Veinticinco suites, y **por PowerShell y no por bash**: Edge headless devuelve
 código 0 y no escribe el PNG cuando se lanza desde un shell sandboxeado, así que
 `prueba_pasos_visuales` falla con «Edge no generó ...png» sin que nada esté roto.
 
 Lo que se comprueba de verdad, y no es humo:
 
-- `prueba_api.py` (743) levanta el servicio y recorre la API entera.
+- `prueba_api.py` (~990) levanta el servicio y recorre la API entera.
 - `prueba_pasos_visuales.py` (229) monta un proyecto de verdad sobre el núcleo y
   ejecuta la cadena de imágenes, rótulos y montaje **hasta el MP4**. Se fabrica
   su propio material: no depende de ningún proyecto.
-- `prueba_piezas.py` (1035) las piezas una a una. **No puede pagar una imagen**:
+- `prueba_piezas.py` (1217) las piezas una a una. **No puede pagar una imagen**:
   deja el motor sin `generar` antes de empezar, así que una firma de cache que
   deje de acertar sale como un fallo con su traza y no como una factura.
+- `pasos/prueba_regresiones.py` los fallos de octubre de 2026, uno por sección:
+  crear un estilo, el catálogo visual, guardar un estilo sin romper sus vídeos,
+  la captura del navegador, la previa, los lotes de render, el precio.
 - `nucleo/prueba_adversarial.py` mata el proceso a mitad de una escritura, cruza
   hilos y procesos, y prueba a salirse de la carpeta con `../`.
 

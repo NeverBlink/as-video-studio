@@ -32,6 +32,11 @@ import tempfile
 # llamada, tambien en las de los dobles de esta suite: sin redirigirla iria
 # al almacen de claves de verdad.
 os.environ.setdefault("ESTUDIO_SECRETOS", tempfile.mkdtemp(prefix="secretos_prueba_"))
+# Y LA BITACORA GLOBAL, por lo mismo. Se lee al importar `nucleo.bitacora`, asi
+# que tiene que ir aqui arriba y no en `main`: cada pasada metia una docena de
+# eventos de un proyecto de mentira en el historial de verdad.
+os.environ.setdefault("ESTUDIO_BITACORA_GLOBAL", os.path.join(
+    tempfile.mkdtemp(prefix="bitacora_prueba_"), "bitacora_global.jsonl"))
 import time
 
 RAIZ_ESTUDIO = os.path.dirname(os.path.abspath(__file__))

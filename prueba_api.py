@@ -4399,6 +4399,20 @@ def probar_que_la_voz_regrabada_queda_al_dia():
                "y se dice por que")
             igual(pagadas, [], "y en ningun momento se ha pedido regrabar la toma entera")
 
+            # LAS EDICIONES DE OTRO TRAMO NO SE DAN POR GRABADAS. B010 es de SB002
+            # y lleva una edicion a mano (la de arriba); se ha regrabado SB001.
+            # La toma apunta el texto de todos los bloques: con la de B010
+            # puesta diria que ya suena, cuando su audio es el viejo, y dejaria
+            # de verse como «editado, sin grabar».
+            sonando = servidor.medios_json(os.path.join(
+                ctx.proyecto.ruta_paso("voz"), "audio_meta.json")) or {}
+            dicho = {b["id"]: b["texto"] for b in sonando.get("bloques") or []}
+            igual(dicho.get("B010"),
+                  next(b["texto"] for b in BLOQUES if b["id"] == "B010"),
+                  "el bloque editado de OTRO tramo sigue con lo que de verdad suena")
+            igual(dicho.get("B004"), "El cuarto, cambiado a peticion.",
+                  "y el del tramo regrabado, con lo nuevo")
+
             # NI CON LA VOZ CORRIENDO: dos trabajos en la carpeta de trabajo de
             # la voz dejan una toma a medias de cada uno
             suelta = threading.Event()
