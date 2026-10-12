@@ -262,6 +262,14 @@ tanda de fallos. Lo que hay que saber para no deshacerlo:
 - **Una cola de «regenerar con nota» por vídeo, y una tanda de cola a la vez**
   (`COLAS`, `otraColaEnMarcha` en `web/app.js`); y **un solo montaje a la vez**
   entre vídeos (`app._exigir_sin_otro_montaje`, 409).
+- **Los lotes del render caben en la memoria TOTAL y en la LIBRE**
+  (`p8_render._tope_por_memoria`, 2,4 GB por lote). Si en tu ordenador monta
+  con menos procesos de los que esperas, es eso: con la total a secas, una
+  máquina de 30 GB con 12 libres pedía once lotes y Edge dejaba de arrancar a
+  media tanda («The paging file is too small»).
+- **El plan de un estilo mide la guía con las imágenes del encargo**, no con
+  las 24 que caben (`presets_light.tareas_de`): con el tope, retomar un estilo
+  de una imagen prometía tres cuartos de hora.
 - **`docs/RETOMAR.md` ya no está en el repositorio**: son notas internas y viven
   solo en la máquina de quien desarrolla (ver arriba).
 
